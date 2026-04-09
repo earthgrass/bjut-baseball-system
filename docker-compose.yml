@@ -1,0 +1,15 @@
+services:
+  baseball-app:
+    build: .
+    container_name: baseball-team-management
+    ports:
+      - "5000:5000"
+    volumes:
+      # 持久化数据库
+      - ./instance:/app/instance
+      # 持久化数据文件（PDF等）
+      - ./data:/app/data
+    environment:
+      - FLASK_APP=app.py
+      - FLASK_ENV=development
+    restart: unless-stopped

@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(.venv/Scripts/python.exe -c ':*)",
+      "Bash(.venv/Scripts/python.exe import_pdfs.py --dry-run)",
+      "Bash(ls -lt --time=ctime *.py)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://127.0.0.1:5000/)",
+      "Bash(curl -s http://127.0.0.1:5000/api/players)",
+      "Bash(curl -s http://127.0.0.1:5000/)",
+      "Bash(taskkill:*)",
+      "Bash(xxd \"C:\\\\Users\\\\champ\\\\Desktop\\\\program\\\\baseball-player-manager\\\\pdf_parser.py\")",
+      "Bash(python:*)",
+      "Bash(curl -s http://127.0.0.1:5000/api/debug/players)",
+      "Bash(curl -s http://127.0.0.1:5000/api/stats/batting)",
+      "Bash(curl -s http://127.0.0.1:5000/api/stats/pitching)",
+      "Bash(curl -s http://127.0.0.1:5000/api/stats/visualization)",
+      "WebSearch",
+      "Bash(pkill -f \"python.*app.py\")",
+      "Bash(curl -s \"http://127.0.0.1:5000/api/matchup/all_game_records\")",
+      "Read(//c/Users/champ/Desktop/棒球/2025棒球首都高校/北工大比赛数据/**)",
+      "Bash(dir \"c:\\\\Users\\\\champ\\\\Desktop\\\\棒球\\\\2025棒球首都高校\\\\北工大比赛数据\\\\\" 2>nul)",
+      "Bash(curl -s http://localhost:5000/ -o /dev/null -w \"%{http_code}\")",
+      "Bash(curl -s http://localhost:5000/api/players)",
+      "Bash(curl -s http://localhost:5000/stats)"
+    ]
+  }
+}

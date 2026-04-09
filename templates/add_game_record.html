@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>录入记录 - POWER ARENA</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@300;400;500;600;700&family=Russo+One&family=Orbitron:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --color-primary: #E60000;
+            --color-primary-dark: #B30000;
+            --color-bg: #050505;
+            --color-surface: #0A0A0A;
+            --color-surface-2: #111111;
+            --color-border: #1E1E1E;
+            --color-accent: #FF1A1A;
+        }
+
+        *, *::before, *::after { box-sizing: border-box; }
+
+        body {
+            font-family: 'Chakra Petch', sans-serif;
+            background-color: var(--color-bg);
+            color: #FFFFFF;
+            overflow-x: hidden;
+        }
+
+        .font-heading { font-family: 'Russo One', sans-serif; }
+        .font-tech { font-family: 'Orbitron', sans-serif; }
+
+        /* Background */
+        .arena-bg {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            pointer-events: none;
+            overflow: hidden;
+            background:
+                radial-gradient(ellipse at 20% 30%, rgba(230, 0, 0, 0.08) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 70%, rgba(255, 26, 26, 0.06) 0%, transparent 45%),
+                radial-gradient(ellipse at 50% 50%, rgba(20, 20, 20, 1) 0%, rgba(5, 5, 5, 1) 100%);
+        }
+
+        .arena-bg .geo-shape {
+            position: absolute;
+            border: 1px solid rgba(230, 0, 0, 0.08);
+            opacity: 0.4;
+            will-change: transform;
+        }
+
+        .arena-bg .hexagon {
+            width: 300px;
+            height: 260px;
+            background: linear-gradient(135deg, rgba(230, 0, 0, 0.03), transparent);
+            clip-path: polygon(30% 0%, 70% 0%, 100% 50%, 70% 100%, 30% 100%, 0% 50%);
+        }
+
+        .arena-bg .diamond {
+            width: 200px;
+            height: 200px;
+            background: linear-gradient(45deg, rgba(255, 26, 26, 0.02), transparent);
+            transform: rotate(45deg);
+        }
+
+        .arena-bg .geo-1 { top: 10%; left: 5%; animation: float-rotate-1 25s ease-in-out infinite; }
+        .arena-bg .geo-2 { top: 60%; right: 8%; animation: float-rotate-2 30s ease-in-out infinite; }
+        .arena-bg .geo-3 { bottom: 15%; left: 15%; animation: float-rotate-3 35s ease-in-out infinite; }
+
+        @keyframes float-rotate-1 {
+            0%, 100% { transform: translate(0, 0) rotate(0deg); }
+            33% { transform: translate(40px, 30px) rotate(120deg); }
+            66% { transform: translate(-30px, 60px) rotate(240deg); }
+        }
+
+        @keyframes float-rotate-2 {
+            0%, 100% { transform: translate(0, 0) rotate(0deg); }
+            50% { transform: translate(-50px, -40px) rotate(180deg); }
+        }
+
+        @keyframes float-rotate-3 {
+            0%, 100% { transform: translate(0, 0) rotate(0deg); opacity: 0.3; }
+            50% { transform: translate(30px, -50px) rotate(-120deg); opacity: 0.5; }
+        }
+
+        .arena-bg .grid-perspective {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 60%;
+            background:
+                linear-gradient(to top, transparent 0%, transparent 80%, rgba(5, 5, 5, 1) 100%),
+                repeating-linear-gradient(90deg, transparent, transparent 100px, rgba(230, 0, 0, 0.04) 100px, rgba(230, 0, 0, 0.04) 101px),
+                repeating-linear-gradient(0deg, transparent, transparent 80px, rgba(230, 0, 0, 0.03) 80px, rgba(230, 0, 0, 0.03) 81px);
+            transform: perspective(500px) rotateX(60deg);
+            transform-origin: bottom;
+            opacity: 0.6;
+        }
+
+        /* Mecha Card */
+        .mecha-card {
+            position: relative;
+            background: linear-gradient(135deg, rgba(17, 17, 17, 0.95) 0%, rgba(10, 10, 10, 0.9) 100%);
+            clip-path: polygon(0 0, calc(100% - 24px) 0, 100% 24px, 100% 100%, 24px 100%, 0 calc(100% - 24px));
+            border: 1px solid rgba(230, 0, 0, 0.15);
+            transition: all 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+            overflow: hidden;
+        }
+
+        .mecha-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 24px;
+            height: 2px;
+            background: linear-gradient(90deg, rgba(230, 0, 0, 0.6), transparent);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .mecha-card::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at 50% 0%, rgba(230, 0, 0, 0.08) 0%, transparent 70%);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            pointer-events: none;
+        }
+
+        .mecha-card:hover {
+            transform: translateY(-4px) scale(1.02);
+            box-shadow: 0 0 30px rgba(230, 0, 0, 0.4), 0 0 60px rgba(230, 0, 0, 0.2), 0 8px 32px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(230, 0, 0, 0.2);
+            border-color: rgba(230, 0, 0, 0.4);
+        }
+
+        .mecha-card:hover::before, .mecha-card:hover::after { opacity: 1; }
+
+        /* Button */
+        .btn-primary {
+            clip-path: polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 16px 100%, 0 calc(100% - 16px));
+            background: linear-gradient(135deg, #E60000 0%, #990000 100%);
+            transition: all 0.25s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn-primary::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.2) 0%, transparent 50%);
+            opacity: 0;
+            transition: opacity 0.25s ease;
+        }
+
+        .btn-primary:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 35px rgba(230, 0, 0, 0.7), 0 0 80px rgba(230, 0, 0, 0.3);
+        }
+
+        .btn-primary:hover::before { opacity: 1; }
+
+        .btn-outline {
+            clip-path: polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 16px 100%, 0 calc(100% - 16px));
+            border: 2px solid #E60000;
+            background: transparent;
+            transition: all 0.25s ease;
+        }
+
+        .btn-outline:hover {
+            background: linear-gradient(135deg, rgba(230, 0, 0, 0.2) 0%, rgba(153, 0, 0, 0.2) 100%);
+            transform: scale(1.05);
+            box-shadow: 0 0 30px rgba(230, 0, 0, 0.4);
+        }
+
+        /* Nav Link */
+        .nav-link {
+            position: relative;
+        }
+
+        .nav-link::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 50%;
+            right: 50%;
+            height: 2px;
+            background: #E60000;
+            transition: all 0.3s ease;
+            box-shadow: 0 0 8px rgba(230, 0, 0, 0.6);
+        }
+
+        .nav-link:hover::after, .nav-link.active::after { left: 0; right: 0; }
+
+        /* Section Divider */
+        .section-divider {
+            height: 1px;
+            background: linear-gradient(90deg, transparent 0%, rgba(230, 0, 0, 0.3) 20%, rgba(230, 0, 0, 0.5) 50%, rgba(230, 0, 0, 0.3) 80%, transparent 100%);
+            box-shadow: 0 0 10px rgba(230, 0, 0, 0.3);
+        }
+
+        /* Form */
+        .form-input {
+            background: rgba(10, 10, 10, 0.8);
+            border: 1px solid rgba(230, 0, 0, 0.2);
+            color: #FFFFFF;
+            padding: 0.75rem 1rem;
+            transition: all 0.3s ease;
+            clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: #E60000;
+            box-shadow: 0 0 15px rgba(230, 0, 0, 0.3);
+        }
+
+        .form-label {
+            color: #9CA3AF;
+            font-size: 0.875rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.5rem;
+            display: block;
+        }
+
+        .form-check-input {
+            accent-color: #E60000;
+            width: 1.25rem;
+            height: 1.25rem;
+        }
+
+        .form-select {
+            background: rgba(10, 10, 10, 0.8) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23E60000'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E") right 0.75rem center/1.5rem no-repeat;
+            border: 1px solid rgba(230, 0, 0, 0.2);
+            color: #FFFFFF;
+            padding: 0.75rem 2.5rem 0.75rem 1rem;
+            transition: all 0.3s ease;
+            clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+            appearance: none;
+        }
+
+        .form-select:focus {
+            outline: none;
+            border-color: #E60000;
+            box-shadow: 0 0 15px rgba(230, 0, 0, 0.3);
+        }
+
+        /* Tab Button */
+        .tab-btn {
+            clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px));
+            background: rgba(17, 17, 17, 0.6);
+            border: 1px solid rgba(230, 0, 0, 0.2);
+            color: #9CA3AF;
+            transition: all 0.3s ease;
+        }
+
+        .tab-btn.active {
+            background: linear-gradient(135deg, rgba(230, 0, 0, 0.2) 0%, rgba(153, 0, 0, 0.2) 100%);
+            border-color: rgba(230, 0, 0, 0.5);
+            color: #FFFFFF;
+            box-shadow: 0 0 20px rgba(230, 0, 0, 0.3);
+        }
+
+        .tab-btn:hover:not(.active) {
+            background: rgba(230, 0, 0, 0.1);
+            border-color: rgba(230, 0, 0, 0.3);
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #050505; }
+        ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #E60000, #990000); border-radius: 0; }
+        ::-webkit-scrollbar-thumb:hover { background: linear-gradient(180deg, #FF1A1A, #B30000); }
+
+        @media (prefers-reduced-motion: reduce) {
+            .arena-bg .geo-shape { animation: none !important; }
+        }
+    </style>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        arena: { bg: '#050505', surface: '#0A0A0A', surface2: '#111111', red: '#E60000', redDark: '#990000', redAccent: '#FF1A1A' }
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="min-h-screen relative">
+
+    <!-- Background -->
+    <div class="arena-bg" aria-hidden="true">
+        <div class="geo-shape hexagon geo-1"></div>
+        <div class="geo-shape diamond geo-2"></div>
+        <div class="geo-shape hexagon geo-3"></div>
+        <div class="grid-perspective"></div>
+    </div>
+
+    <!-- Content -->
+    <div class="relative z-10">
+
+        <!-- Navigation -->
+        <nav class="bg-arena-surface/90 backdrop-blur-md border-b border-arena-red/20 sticky top-0 z-50">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6">
+                <div class="flex items-center justify-between h-16">
+                    <a href="/" class="font-heading text-xl sm:text-2xl text-white italic tracking-tighter flex items-center gap-2 hover:text-arena-red transition-colors duration-200">
+                        <svg class="w-7 h-7 text-arena-red" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2" />
+                            <line x1="12" y1="22" x2="12" y2="15.5" />
+                            <polyline points="22 8.5 12 15.5 2 8.5" />
+                        </svg>
+                        POWER <span class="text-arena-red">ARENA</span>
+                    </a>
+
+                    <div class="hidden lg:flex items-center gap-1">
+                        <a href="/" class="nav-link px-4 py-2 text-gray-300 font-semibold text-sm hover:text-white transition-colors duration-200">首页</a>
+                        <a href="/players" class="nav-link px-4 py-2 text-gray-300 font-semibold text-sm hover:text-white transition-colors duration-200">球员列表</a>
+                        <a href="/add_player" class="nav-link px-4 py-2 text-gray-300 font-semibold text-sm hover:text-white transition-colors duration-200">添加球员</a>
+                        <a href="/game_stats" class="nav-link px-4 py-2 text-gray-300 font-semibold text-sm hover:text-white transition-colors duration-200">比赛数据</a>
+                        <a href="/add_game_record" class="nav-link active px-4 py-2 text-arena-red font-semibold text-sm hover:text-white transition-colors duration-200">录入记录</a>
+                        <a href="/stats" class="nav-link px-4 py-2 text-gray-300 font-semibold text-sm hover:text-white transition-colors duration-200">数据统计</a>
+                        <a href="/matchup_stats" class="nav-link px-4 py-2 text-gray-300 font-semibold text-sm hover:text-white transition-colors duration-200">对局信息</a>
+                    </div>
+
+                    <button class="lg:hidden text-gray-300 hover:text-arena-red transition-colors p-2 cursor-pointer" id="mobile-menu-btn" aria-label="打开导航菜单">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path id="menu-icon-open" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+                            <path id="menu-icon-close" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" class="hidden"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <div class="lg:hidden hidden border-t border-arena-red/10" id="mobile-menu">
+                <div class="px-4 py-3 space-y-1 bg-arena-surface/95 backdrop-blur-md">
+                    <a href="/" class="block px-4 py-3 text-gray-300 font-semibold text-sm hover:text-white hover:bg-arena-red/10 transition-colors">首页</a>
+                    <a href="/players" class="block px-4 py-3 text-gray-300 font-semibold text-sm hover:text-white hover:bg-arena-red/10 transition-colors">球员列表</a>
+                    <a href="/add_player" class="block px-4 py-3 text-gray-300 font-semibold text-sm hover:text-white hover:bg-arena-red/10 transition-colors">添加球员</a>
+                    <a href="/game_stats" class="block px-4 py-3 text-gray-300 font-semibold text-sm hover:text-white hover:bg-arena-red/10 transition-colors">比赛数据</a>
+                    <a href="/add_game_record" class="block px-4 py-3 text-arena-red font-semibold text-sm bg-arena-red/10">录入记录</a>
+                    <a href="/stats" class="block px-4 py-3 text-gray-300 font-semibold text-sm hover:text-white hover:bg-arena-red/10 transition-colors">数据统计</a>
+                    <a href="/matchup_stats" class="block px-4 py-3 text-gray-300 font-semibold text-sm hover:text-white hover:bg-arena-red/10 transition-colors">对局信息</a>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Main Content -->
+        <div class="max-w-5xl mx-auto px-4 sm:px-6 py-8">
+
+            <!-- Header -->
+            <div class="text-center mb-12">
+                <p class="text-arena-red text-xs font-bold tracking-[0.4em] uppercase mb-3">Game Record</p>
+                <h1 class="font-heading text-5xl md:text-6xl font-black italic tracking-tighter mb-6">
+                    录入 <span class="text-arena-red">记录</span>
+                </h1>
+            </div>
+
+            <!-- Divider -->
+            <div class="section-divider max-w-5xl mx-auto mb-12" aria-hidden="true"></div>
+
+            <!-- Form -->
+            <div class="mecha-card p-8 md:p-10">
+                <form id="gameRecordForm" class="space-y-8">
+
+                    <!-- Player & Opponent -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <label class="form-label" for="player_id">选择球员 *</label>
+                            <select class="form-select w-full" id="player_id" required onchange="onPlayerChange()">
+                                <option value="">请选择球员</option>
+                                {% for player in players %}
+                                <option value="{{ player.id }}" data-is-pitcher="{{ player.is_pitcher }}">
+                                    {{ player.name }} (#{{ player.jersey_number }}) - {{ player.primary_position or '未指定' }}
+                                    {% if player.is_pitcher %}[可投球]{% else %}[非投手]{% endif %}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div>
+                            <label class="form-label" for="opponent">对手球队 *</label>
+                            <input type="text" class="form-input w-full" id="opponent" list="opponentsList" required placeholder="选择或输入对手名称">
+                            <datalist id="opponentsList"></datalist>
+                            <p class="text-gray-500 text-sm mt-2">可直接选择历史对手，也可以手动输入新对手名称。</p>
+                        </div>
+                    </div>
+
+                    <!-- Date & Record Type -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <label class="form-label" for="game_date">比赛日期 *</label>
+                            <input type="date" class="form-input w-full" id="game_date" required>
+                        </div>
+                        <div>
+                            <label class="form-label">记录类型</label>
+                            <div class="flex gap-4 mt-3">
+                                <label class="flex items-center gap-2 cursor-pointer">
+                                    <input type="radio" class="form-check-input" name="record_type" id="battingRecord" value="batting" checked onchange="toggleRecordType()">
+                                    <span class="text-gray-300">打击记录</span>
+                                </label>
+                                <label class="flex items-center gap-2 cursor-pointer">
+                                    <input type="radio" class="form-check-input" name="record_type" id="pitchingRecord" value="pitching" onchange="toggleRecordType()">
+                                    <span class="text-gray-300">投球记录</span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Batting Fields -->
+                    <div id="battingFields">
+                        <div class="mecha-card p-6" style="background: rgba(10, 10, 10, 0.5); clip-path: polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 20px 100%, 0 calc(100% - 20px));">
+                            <h3 class="font-heading text-lg font-bold text-white mb-6 flex items-center gap-2">
+                                <svg class="w-5 h-5 text-arena-red" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                                </svg>
+                                打击数据
+                            </h3>
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                <div>
+                                    <label class="form-label" for="at_bats">打数 (AB) *</label>
+                                    <input type="number" class="form-input w-full" id="at_bats" min="0" value="0">
+                                </div>
+                                <div>
+                                    <label class="form-label" for="runs">得分 (R)</label>
+                                    <input type="number" class="form-input w-full" id="runs" min="0" value="0">
+                                </div>
+                                <div>
+                                    <label class="form-label" for="hits">安打 (H)</label>
+                                    <input type="number" class="form-input w-full" id="hits" min="0" value="0">
+                                </div>
+                                <div>
+                                    <label class="form-label" for="rbi">打点 (RBI)</label>
+                                    <input type="number" class="form-input w-full" id="rbi" min="0" value="0">
+                                </div>
+                                <div>
+                                    <label class="form-label" for="walks">保送 (BB)</label>
+                                    <input type="number" class="form-input w-full" id="walks" min="0" value="0">
+                                </div>
+                                <div>
+                                    <label class="form-label" for="strikeouts">三振 (SO)</label>
+                                    <input type="number" class="form-input w-full" id="strikeouts" min="0" value="0">
+                                </div>
+                                <div>
+                                    <label class="form-label" for="doubles">二垒安打 (2B)</label>
+                                    <input type="number" class="form-input w-full" id="doubles" min="0" value="0">
+                                </div>
+                                <div>
+                                    <label class="form-label" for="triples">三垒安打 (3B)</label>
+                                    <input type="number" class="form-input w-full" id="triples" min="0" value="0">
+                                </div>
+                                <div>
+                                    <label class="form-label" for="home_runs_game">本垒打 (HR)</label>
+                                    <input type="number" class="form-input w-full" id="home_runs_game" min="0" value="0">
+                                </div>
+                                <div>
+                                    <label class="form-label" for="hit_by_pitch">被中身球 (HBP)</label>
+                                    <input type="number" class="form-input w-full" id="hit_by_pitch" min="0" value="0">
+                                </div>
+                                <div>
+                                    <label class="form-label" for="stolen_bases_game">盗垒 (SB)</label>
+                                    <input type="number" class="form-input w-full" id="stolen_bases_game" min="0" value="0">
+                                </div>
+                                <div>
+                                    <label class="form-label" for="caught_stealing">被触杀 (CS)</label>
+                                    <input type="number" class="form-input w-full" id="caught_stealing" min="0" value="0">
+                                </div>
+                                <div>
+                                    <label class="form-label" for="sacrifice_flys">高飞牺牲打 (SF)</label>
+                                    <input type="number" class="form-input w-full" id="sacrifice_flys" min="0" value="0">
+                                </div>
+                                <div>
+                                    <label class="form-label" for="sacrifice_hits">牺牲触击 (SH)</label>
+                                    <input type="number" class="form-input w-full" id="sacrifice_hits" min="0" value="0">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Pitching Fields -->
+                    <div id="pitchingFields" style="display: none;">
+                        <div class="mecha-card p-6" style="background: rgba(10, 10, 10, 0.5); clip-path: polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 20px 100%, 0 calc(100% - 20px));">
+                            <h3 class="font-heading text-lg font-bold text-white mb-6 flex items-center gap-2">
+                                <svg class="w-5 h-5 text-arena-red" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z"/>
+                                </svg>
+                                投球数据
+                            </h3>
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                <div>
+                                    <label class="form-label" for="innings_pitched">局数 (IP) *</label>
+                                    <input type="number" step="0.1" class="form-input w-full" id="innings_pitched" min="0" value="0">
+                                </div>
+                                <div>
+                                    <label class="form-label" for="hits_allowed">被打安打数 (H)</label>
+                                    <input type="number" class="form-input w-full" id="hits_allowed" min="0" value="0">
+                                </div>
+                                <div>
+                                    <label class="form-label" for="runs_allowed">被得分数 (R)</label>
+                                    <input type="number" class="form-input w-full" id="runs_allowed" min="0" value="0">
+                                </div>
+                                <div>
+                                    <label class="form-label" for="earned_runs">自责分 (ER)</label>
+                                    <input type="number" class="form-input w-full" id="earned_runs" min="0" value="0">
+                                </div>
+                                <div>
+                                    <label class="form-label" for="walks_allowed">保送数 (BB)</label>
+                                    <input type="number" class="form-input w-full" id="walks_allowed" min="0" value="0">
+                                </div>
+                                <div>
+                                    <label class="form-label" for="strikeouts_pitched">三振数 (SO)</label>
+                                    <input type="number" class="form-input w-full" id="strikeouts_pitched" min="0" value="0">
+                                </div>
+                                <div>
+                                    <label class="form-label" for="home_runs_allowed">被打本垒打数 (HR)</label>
+                                    <input type="number" class="form-input w-full" id="home_runs_allowed" min="0" value="0">
+                                </div>
+                                <div>
+                                    <label class="form-label" for="pitches">总投球数 (P)</label>
+                                    <input type="number" class="form-input w-full" id="pitches" min="0" value="0">
+                                </div>
+                                <div>
+                                    <label class="form-label" for="strikes">好球数 (S)</label>
+                                    <input type="number" class="form-input w-full" id="strikes" min="0" value="0">
+                                </div>
+                                <div>
+                                    <label class="form-label" for="hit_by_pitch_allowed">触身数 (HBP)</label>
+                                    <input type="number" class="form-input w-full" id="hit_by_pitch_allowed" min="0" value="0">
+                                </div>
+                                <div>
+                                    <label class="form-label" for="batters_faced">面对打者数 (BF)</label>
+                                    <input type="number" class="form-input w-full" id="batters_faced" min="0" value="0">
+                                </div>
+                            </div>
+                            <div class="mt-6">
+                                <label class="form-label">比赛结果</label>
+                                <div class="flex gap-6 mt-3">
+                                    <label class="flex items-center gap-2 cursor-pointer">
+                                        <input type="checkbox" class="form-check-input" id="win">
+                                        <span class="text-gray-300">胜投</span>
+                                    </label>
+                                    <label class="flex items-center gap-2 cursor-pointer">
+                                        <input type="checkbox" class="form-check-input" id="loss">
+                                        <span class="text-gray-300">败投</span>
+                                    </label>
+                                    <label class="flex items-center gap-2 cursor-pointer">
+                                        <input type="checkbox" class="form-check-input" id="save">
+                                        <span class="text-gray-300">救援成功</span>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Actions -->
+                    <div class="flex flex-col sm:flex-row gap-4 justify-end pt-6">
+                        <a href="/game_stats" class="btn-outline text-white px-8 py-3 font-heading text-sm font-bold inline-flex items-center justify-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+                            </svg>
+                            返回统计页面
+                        </a>
+                        <button type="button" class="btn-primary text-white px-8 py-3 font-heading text-sm font-bold inline-flex items-center justify-center gap-2" onclick="submitGameRecord()">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                            </svg>
+                            保存比赛记录
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+        </div>
+
+    </div>
+
+    <script>
+        // Mobile Menu
+        const menuBtn = document.getElementById('mobile-menu-btn');
+        const mobileMenu = document.getElementById('mobile-menu');
+        const iconOpen = document.getElementById('menu-icon-open');
+        const iconClose = document.getElementById('menu-icon-close');
+
+        menuBtn.addEventListener('click', () => {
+            const isOpen = !mobileMenu.classList.contains('hidden');
+            mobileMenu.classList.toggle('hidden');
+            iconOpen.classList.toggle('hidden');
+            iconClose.classList.toggle('hidden');
+            menuBtn.setAttribute('aria-expanded', !isOpen);
+        });
+    </script>
+    <script src="{{ url_for('static', filename='js/game_record.js') }}"></script>
+</body>
+</html>

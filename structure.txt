@@ -1,0 +1,15 @@
+baseball-player-manager/
+│
+├── app.py              # 主程序
+├── database.py         # 数据库操作
+├── requirements.txt    # 依赖包
+├── static/
+│   ├── css/
+│   │   └── style.css
+│   └── js/
+│       └── script.js
+└── templates/
+    ├── index.html
+    ├── add_player.html
+    ├── stats.html
+    └── players.html

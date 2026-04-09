@@ -1,0 +1,9 @@
+Flask==2.3.3
+Flask-SQLAlchemy==3.0.5
+Flask-Migrate==4.1.0
+setuptools>=68
+pandas==2.2.3
+matplotlib==3.9.2
+seaborn==0.13.2
+plotly==5.24.1
+pdfplumber==0.11.4

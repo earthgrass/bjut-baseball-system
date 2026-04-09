@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>历年比赛记录PDF查看器 - 棒球队管理系统</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/dataTables.bootstrap5.min.css">
+    <style>
+        .pdf-container {
+            height: 80vh;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            overflow: hidden;
+            background-color: #f8f9fa;
+        }
+        
+        .pdf-viewer {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+        
+        .file-list-item {
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border-left: 4px solid transparent;
+        }
+        
+        .file-list-item:hover {
+            background-color: rgba(0, 123, 255, 0.1);
+            border-left-color: #007bff;
+        }
+        
+        .file-list-item.active {
+            background-color: rgba(0, 123, 255, 0.15);
+            border-left-color: #007bff;
+            font-weight: 500;
+        }
+        
+        .year-badge {
+            font-size: 0.8rem;
+            padding: 3px 8px;
+        }
+        
+        .file-size {
+            font-size: 0.85rem;
+            color: #6c757d;
+        }
+        
+        .search-box {
+            position: relative;
+        }
+        
+        .search-box .form-control {
+            padding-left: 40px;
+        }
+        
+        .search-box i {
+            position: absolute;
+            left: 15px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #6c757d;
+        }
+        
+        .no-preview {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: #6c757d;
+        }
+        
+        .no-preview i {
+            font-size: 4rem;
+            margin-bottom: 20px;
+            opacity: 0.5;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="/">
+                <i class="fas fa-baseball-ball me-2"></i>棒球队球员管理系统
+            </a>
+            <div class="navbar-nav">
+                <a class="nav-link" href="/">
+                    <i class="fas fa-home"></i> 返回首页
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid mt-4">
+        <div class="row">
+            <!-- 左侧文件列表 -->
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-header bg-primary text-white">
+                        <i class="fas fa-file-pdf me-2"></i>历年比赛记录PDF文件
+                    </div>
+                    <div class="card-body">
+                        <!-- 搜索框 -->
+                        <div class="search-box mb-3">
+                            <i class="fas fa-search"></i>
+                            <input type="text" class="form-control" id="searchInput" placeholder="搜索比赛记录...">
+                        </div>
+                        
+                        <!-- 年份筛选 -->
+                        <div class="mb-3">
+                            <label class="form-label">按年份筛选：</label>
+                            <div class="btn-group" role="group" id="yearFilter">
+                                <button type="button" class="btn btn-outline-primary active" data-year="all">全部</button>
+                                <button type="button" class="btn btn-outline-primary" data-year="2025">2025</button>
+                                <button type="button" class="btn btn-outline-primary" data-year="2024">2024</button>
+                                <button type="button" class="btn btn-outline-primary" data-year="2023">2023</button>
+                            </div>
+                        </div>
+                        
+                        <!-- 文件列表 -->
+                        <div class="list-group" id="fileList" style="max-height: 65vh; overflow-y: auto;">
+                            <!-- 文件列表将通过JavaScript动态加载 -->
+                            <div class="text-center text-muted py-4">
+                                <i class="fas fa-spinner fa-spin me-2"></i>正在加载文件列表...
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 右侧PDF预览 -->
+            <div class="col-md-8">
+                <div class="card">
+                    <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
+                        <div>
+                            <i class="fas fa-eye me-2"></i>PDF预览
+                            <span id="currentFileName" class="ms-2 fw-normal"></span>
+                        </div>
+                        <div>
+                            <button class="btn btn-sm btn-light" onclick="zoomIn()">
+                                <i class="fas fa-search-plus"></i> 放大
+                            </button>
+                            <button class="btn btn-sm btn-light ms-2" onclick="zoomOut()">
+                                <i class="fas fa-search-minus"></i> 缩小
+                            </button>
+                            <button class="btn btn-sm btn-light ms-2" onclick="downloadCurrentPDF()">
+                                <i class="fas fa-download"></i> 下载
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="pdf-container" id="pdfContainer">
+                            <div class="no-preview" id="noPreview">
+                                <i class="fas fa-file-pdf"></i>
+                                <h5>选择左侧的文件进行预览</h5>
+                                <p class="text-muted">点击文件列表中的任意文件查看PDF内容</p>
+                            </div>
+                            <iframe class="pdf-viewer" id="pdfViewer" style="display: none;"></iframe>
+                        </div>
+                        
+                        <!-- PDF信息 -->
+                        <div class="p-3 border-top" id="pdfInfo" style="display: none;">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <h6>文件信息</h6>
+                                    <p class="mb-1"><strong>文件名：</strong><span id="infoFileName"></span></p>
+                                    <p class="mb-1"><strong>年份：</strong><span id="infoYear"></span></p>
+                                    <p class="mb-1"><strong>文件大小：</strong><span id="infoSize"></span></p>
+                                </div>
+                                <div class="col-md-6">
+                                    <h6>比赛信息</h6>
+                                    <p class="mb-1"><strong>对阵双方：</strong><span id="infoMatchup"></span></p>
+                                    <p class="mb-1"><strong>比赛日期：</strong><span id="infoDate"></span></p>
+                                    <p class="mb-0"><strong>文件路径：</strong><span id="infoPath" class="text-muted small"></span></p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 使用说明 -->
+                <div class="card mt-4">
+                    <div class="card-header bg-info text-white">
+                        <i class="fas fa-info-circle me-2"></i>使用说明
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h6>功能说明：</h6>
+                                <ul>
+                                    <li>左侧显示所有年份的比赛记录PDF文件</li>
+                                    <li>点击任意文件可在右侧预览PDF内容</li>
+                                    <li>支持放大、缩小和下载PDF文件</li>
+                                    <li>可按年份筛选文件，或使用搜索功能</li>
+                                </ul>
+                            </div>
+                            <div class="col-md-6">
+                                <h6>数据说明：</h6>
+                                <ul>
+                                    <li>数据来源：data文件夹下的历年比赛记录</li>
+                                    <li>文件命名格式：对阵双方_比赛日期.pdf</li>
+                                    <li>年份分类：2023年、2024年、2025年</li>
+                                    <li>文件总数：<span id="totalFilesCount">0</span> 个PDF文件</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="{{ url_for('static', filename='js/pdf_viewer.js') }}"></script>
+</body>
+</html>

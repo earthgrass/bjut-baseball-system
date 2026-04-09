@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>比赛数据 - POWER ARENA</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@300;400;500;600;700&family=Russo+One&family=Orbitron:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --color-primary: #E60000;
+            --color-primary-dark: #B30000;
+            --color-bg: #050505;
+            --color-surface: #0A0A0A;
+            --color-surface-2: #111111;
+            --color-border: #1E1E1E;
+            --color-accent: #FF1A1A;
+        }
+
+        *, *::before, *::after { box-sizing: border-box; }
+
+        body {
+            font-family: 'Chakra Petch', sans-serif;
+            background-color: var(--color-bg);
+            color: #FFFFFF;
+            overflow-x: hidden;
+        }
+
+        .font-heading { font-family: 'Russo One', sans-serif; }
+        .font-tech { font-family: 'Orbitron', sans-serif; }
+
+        .arena-bg {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            pointer-events: none;
+            overflow: hidden;
+            background:
+                radial-gradient(ellipse at 20% 30%, rgba(230, 0, 0, 0.08) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 70%, rgba(255, 26, 26, 0.06) 0%, transparent 45%),
+                radial-gradient(ellipse at 50% 50%, rgba(20, 20, 20, 1) 0%, rgba(5, 5, 5, 1) 100%);
+        }
+
+        .arena-bg .geo-shape {
+            position: absolute;
+            border: 1px solid rgba(230, 0, 0, 0.08);
+            opacity: 0.4;
+            will-change: transform;
+        }
+
+        .arena-bg .hexagon {
+            width: 300px;
+            height: 260px;
+            background: linear-gradient(135deg, rgba(230, 0, 0, 0.03), transparent);
+            clip-path: polygon(30% 0%, 70% 0%, 100% 50%, 70% 100%, 30% 100%, 0% 50%);
+        }
+
+        .arena-bg .diamond {
+            width: 200px;
+            height: 200px;
+            background: linear-gradient(45deg, rgba(255, 26, 26, 0.02), transparent);
+            transform: rotate(45deg);
+        }
+
+        .arena-bg .geo-1 { top: 10%; left: 5%; animation: float-rotate-1 25s ease-in-out infinite; }
+        .arena-bg .geo-2 { top: 60%; right: 8%; animation: float-rotate-2 30s ease-in-out infinite; }
+        .arena-bg .geo-3 { bottom: 15%; left: 15%; animation: float-rotate-3 35s ease-in-out infinite; }
+
+        @keyframes float-rotate-1 {
+            0%, 100% { transform: translate(0, 0) rotate(0deg); }
+            33% { transform: translate(40px, 30px) rotate(120deg); }
+            66% { transform: translate(-30px, 60px) rotate(240deg); }
+        }
+
+        @keyframes float-rotate-2 {
+            0%, 100% { transform: translate(0, 0) rotate(0deg); }
+            50% { transform: translate(-50px, -40px) rotate(180deg); }
+        }
+
+        @keyframes float-rotate-3 {
+            0%, 100% { transform: translate(0, 0) rotate(0deg); opacity: 0.3; }
+            50% { transform: translate(30px, -50px) rotate(-120deg); opacity: 0.5; }
+        }
+
+        .arena-bg .grid-perspective {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 60%;
+            background:
+                linear-gradient(to top, transparent 0%, transparent 80%, rgba(5, 5, 5, 1) 100%),
+                repeating-linear-gradient(90deg, transparent, transparent 100px, rgba(230, 0, 0, 0.04) 100px, rgba(230, 0, 0, 0.04) 101px),
+                repeating-linear-gradient(0deg, transparent, transparent 80px, rgba(230, 0, 0, 0.03) 80px, rgba(230, 0, 0, 0.03) 81px);
+            transform: perspective(500px) rotateX(60deg);
+            transform-origin: bottom;
+            opacity: 0.6;
+        }
+
+        .mecha-card {
+            position: relative;
+            background: linear-gradient(135deg, rgba(17, 17, 17, 0.95) 0%, rgba(10, 10, 10, 0.9) 100%);
+            clip-path: polygon(0 0, calc(100% - 24px) 0, 100% 24px, 100% 100%, 24px 100%, 0 calc(100% - 24px));
+            border: 1px solid rgba(230, 0, 0, 0.15);
+            transition: all 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+            overflow: hidden;
+        }
+
+        .mecha-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 24px;
+            height: 2px;
+            background: linear-gradient(90deg, rgba(230, 0, 0, 0.6), transparent);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .mecha-card::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at 50% 0%, rgba(230, 0, 0, 0.08) 0%, transparent 70%);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            pointer-events: none;
+        }
+
+        .mecha-card:hover {
+            transform: translateY(-4px) scale(1.02);
+            box-shadow: 0 0 30px rgba(230, 0, 0, 0.4), 0 0 60px rgba(230, 0, 0, 0.2), 0 8px 32px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(230, 0, 0, 0.2);
+            border-color: rgba(230, 0, 0, 0.4);
+        }
+
+        .mecha-card:hover::before, .mecha-card:hover::after { opacity: 1; }
+
+        .btn-primary {
+            clip-path: polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 16px 100%, 0 calc(100% - 16px));
+            background: linear-gradient(135deg, #E60000 0%, #990000 100%);
+            transition: all 0.25s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn-primary:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 35px rgba(230, 0, 0, 0.7), 0 0 80px rgba(230, 0, 0, 0.3);
+        }
+
+        .btn-outline {
+            clip-path: polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 16px 100%, 0 calc(100% - 16px));
+            border: 2px solid #E60000;
+            background: transparent;
+            transition: all 0.25s ease;
+        }
+
+        .btn-outline:hover {
+            background: linear-gradient(135deg, rgba(230, 0, 0, 0.2) 0%, rgba(153, 0, 0, 0.2) 100%);
+            transform: scale(1.05);
+            box-shadow: 0 0 30px rgba(230, 0, 0, 0.4);
+        }
+
+        .nav-link {
+            position: relative;
+        }
+
+        .nav-link::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 50%;
+            right: 50%;
+            height: 2px;
+            background: #E60000;
+            transition: all 0.3s ease;
+            box-shadow: 0 0 8px rgba(230, 0, 0, 0.6);
+        }
+
+        .nav-link:hover::after, .nav-link.active::after { left: 0; right: 0; }
+
+        .section-divider {
+            height: 1px;
+            background: linear-gradient(90deg, transparent 0%, rgba(230, 0, 0, 0.3) 20%, rgba(230, 0, 0, 0.5) 50%, rgba(230, 0, 0, 0.3) 80%, transparent 100%);
+            box-shadow: 0 0 10px rgba(230, 0, 0, 0.3);
+        }
+
+        .mecha-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+        }
+
+        .mecha-table thead th {
+            background: linear-gradient(135deg, rgba(230, 0, 0, 0.15) 0%, rgba(153, 0, 0, 0.1) 100%);
+            color: #E60000;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            font-size: 0.75rem;
+            padding: 1rem;
+            border-bottom: 2px solid rgba(230, 0, 0, 0.3);
+            text-align: left;
+        }
+
+        .mecha-table tbody tr {
+            transition: all 0.2s ease;
+        }
+
+        .mecha-table tbody tr:hover {
+            background: rgba(230, 0, 0, 0.05);
+        }
+
+        .mecha-table tbody td {
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid rgba(230, 0, 0, 0.1);
+        }
+
+        /* Tab */
+        .tab-btn {
+            clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px));
+            background: rgba(17, 17, 17, 0.6);
+            border: 1px solid rgba(230, 0, 0, 0.2);
+            color: #9CA3AF;
+            transition: all 0.3s ease;
+            padding: 0.75rem 1.5rem;
+            font-family: 'Chakra Petch', sans-serif;
+            font-weight: 600;
+            font-size: 0.875rem;
+            cursor: pointer;
+        }
+
+        .tab-btn.active {
+            background: linear-gradient(135deg, rgba(230, 0, 0, 0.2) 0%, rgba(153, 0, 0, 0.2) 100%);
+            border-color: rgba(230, 0, 0, 0.5);
+            color: #FFFFFF;
+            box-shadow: 0 0 20px rgba(230, 0, 0, 0.3);
+        }
+
+        .tab-btn:hover:not(.active) {
+            background: rgba(230, 0, 0, 0.1);
+            border-color: rgba(230, 0, 0, 0.3);
+        }
+
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #050505; }
+        ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #E60000, #990000); border-radius: 0; }
+
+        @media (prefers-reduced-motion: reduce) {
+            .arena-bg .geo-shape { animation: none !important; }
+        }
+    </style>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        arena: { bg: '#050505', surface: '#0A0A0A', surface2: '#111111', red: '#E60000', redDark: '#990000', redAccent: '#FF1A1A' }
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="min-h-screen relative">
+
+    <!-- Background -->
+    <div class="arena-bg" aria-hidden="true">
+        <div class="geo-shape hexagon geo-1"></div>
+        <div class="geo-shape diamond geo-2"></div>
+        <div class="geo-shape hexagon geo-3"></div>
+        <div class="grid-perspective"></div>
+    </div>
+
+    <!-- Content -->
+    <div class="relative z-10">
+
+        <!-- Navigation -->
+        <nav class="bg-arena-surface/90 backdrop-blur-md border-b border-arena-red/20 sticky top-0 z-50">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6">
+                <div class="flex items-center justify-between h-16">
+                    <a href="/" class="font-heading text-xl sm:text-2xl text-white italic tracking-tighter flex items-center gap-2 hover:text-arena-red transition-colors duration-200">
+                        <svg class="w-7 h-7 text-arena-red" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2" />
+                            <line x1="12" y1="22" x2="12" y2="15.5" />
+                            <polyline points="22 8.5 12 15.5 2 8.5" />
+                        </svg>
+                        POWER <span class="text-arena-red">ARENA</span>
+                    </a>
+
+                    <div class="hidden lg:flex items-center gap-1">
+                        <a href="/" class="nav-link px-4 py-2 text-gray-300 font-semibold text-sm hover:text-white transition-colors duration-200">首页</a>
+                        <a href="/players" class="nav-link px-4 py-2 text-gray-300 font-semibold text-sm hover:text-white transition-colors duration-200">球员列表</a>
+                        <a href="/add_player" class="nav-link px-4 py-2 text-gray-300 font-semibold text-sm hover:text-white transition-colors duration-200">添加球员</a>
+                        <a href="/game_stats" class="nav-link active px-4 py-2 text-arena-red font-semibold text-sm hover:text-white transition-colors duration-200">比赛数据</a>
+                        <a href="/add_game_record" class="nav-link px-4 py-2 text-gray-300 font-semibold text-sm hover:text-white transition-colors duration-200">录入记录</a>
+                        <a href="/stats" class="nav-link px-4 py-2 text-gray-300 font-semibold text-sm hover:text-white transition-colors duration-200">数据统计</a>
+                        <a href="/matchup_stats" class="nav-link px-4 py-2 text-gray-300 font-semibold text-sm hover:text-white transition-colors duration-200">对局信息</a>
+                    </div>
+
+                    <button class="lg:hidden text-gray-300 hover:text-arena-red transition-colors p-2 cursor-pointer" id="mobile-menu-btn" aria-label="打开导航菜单">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path id="menu-icon-open" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+                            <path id="menu-icon-close" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" class="hidden"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <div class="lg:hidden hidden border-t border-arena-red/10" id="mobile-menu">
+                <div class="px-4 py-3 space-y-1 bg-arena-surface/95 backdrop-blur-md">
+                    <a href="/" class="block px-4 py-3 text-gray-300 font-semibold text-sm hover:text-white hover:bg-arena-red/10 transition-colors">首页</a>
+                    <a href="/players" class="block px-4 py-3 text-gray-300 font-semibold text-sm hover:text-white hover:bg-arena-red/10 transition-colors">球员列表</a>
+                    <a href="/add_player" class="block px-4 py-3 text-gray-300 font-semibold text-sm hover:text-white hover:bg-arena-red/10 transition-colors">添加球员</a>
+                    <a href="/game_stats" class="block px-4 py-3 text-arena-red font-semibold text-sm bg-arena-red/10">比赛数据</a>
+                    <a href="/add_game_record" class="block px-4 py-3 text-gray-300 font-semibold text-sm hover:text-white hover:bg-arena-red/10 transition-colors">录入记录</a>
+                    <a href="/stats" class="block px-4 py-3 text-gray-300 font-semibold text-sm hover:text-white hover:bg-arena-red/10 transition-colors">数据统计</a>
+                    <a href="/matchup_stats" class="block px-4 py-3 text-gray-300 font-semibold text-sm hover:text-white hover:bg-arena-red/10 transition-colors">对局信息</a>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Main Content -->
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+
+            <!-- Header -->
+            <div class="text-center mb-12">
+                <p class="text-arena-red text-xs font-bold tracking-[0.4em] uppercase mb-3">Game Stats</p>
+                <h1 class="font-heading text-5xl md:text-6xl font-black italic tracking-tighter mb-6">
+                    比赛 <span class="text-arena-red">数据</span>
+                </h1>
+                <div class="flex flex-col sm:flex-row gap-4 justify-center">
+                    <a href="/add_game_record" class="btn-primary text-white px-8 py-3 font-heading text-sm font-bold inline-flex items-center justify-center gap-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                        </svg>
+                        添加比赛记录
+                    </a>
+                    <a href="/" class="btn-outline text-white px-8 py-3 font-heading text-sm font-bold inline-flex items-center justify-center gap-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
+                        </svg>
+                        返回首页
+                    </a>
+                </div>
+            </div>
+
+            <!-- Divider -->
+            <div class="section-divider max-w-5xl mx-auto mb-12" aria-hidden="true"></div>
+
+            <!-- Tabs -->
+            <div class="flex flex-wrap gap-3 mb-8">
+                <button class="tab-btn active" onclick="switchTab('battersTab', this)">
+                    <svg class="w-4 h-4 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                    </svg>
+                    打击数据
+                </button>
+                <button class="tab-btn" onclick="switchTab('pitchersTab', this)">
+                    <svg class="w-4 h-4 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z"/>
+                    </svg>
+                    投手数据
+                </button>
+                <button class="tab-btn" onclick="switchTab('leaderboardsTab', this)">
+                    <svg class="w-4 h-4 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"/>
+                    </svg>
+                    排行榜
+                </button>
+            </div>
+
+            <!-- Batters Tab -->
+            <div id="battersTab" class="tab-content active">
+                <div class="mecha-card p-6 md:p-8 mb-8">
+                    <h3 class="font-heading text-xl font-bold text-white mb-6 flex items-center gap-2">
+                        <svg class="w-5 h-5 text-arena-red" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                        </svg>
+                        打击数据统计表
+                    </h3>
+                    <div class="overflow-x-auto">
+                        <table class="mecha-table" id="battersTable">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>姓名</th>
+                                    <th>背号</th>
+                                    <th>守备位置</th>
+                                    <th>打击率</th>
+                                    <th>上垒率</th>
+                                    <th>打数</th>
+                                    <th>安打</th>
+                                    <th>打点</th>
+                                    <th>得分</th>
+                                    <th>三振</th>
+                                    <th>保送</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="mecha-card p-6 md:p-8">
+                    <h3 class="font-heading text-xl font-bold text-white mb-6 flex items-center gap-2">
+                        <svg class="w-5 h-5 text-arena-red" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z"/>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z"/>
+                        </svg>
+                        打击数据可视化
+                    </h3>
+                    <button class="btn-primary text-white px-6 py-2.5 font-heading text-sm font-bold mb-6" onclick="loadBattingVisualization()">
+                        <svg class="w-4 h-4 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10"/>
+                        </svg>
+                        生成打击统计图表
+                    </button>
+                    <div id="battingChart"></div>
+                </div>
+            </div>
+
+            <!-- Pitchers Tab -->
+            <div id="pitchersTab" class="tab-content">
+                <div class="mecha-card p-6 md:p-8 mb-8">
+                    <h3 class="font-heading text-xl font-bold text-white mb-6 flex items-center gap-2">
+                        <svg class="w-5 h-5 text-arena-red" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z"/>
+                        </svg>
+                        投手数据统计表
+                    </h3>
+                    <div class="overflow-x-auto">
+                        <table class="mecha-table" id="pitchersTable">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>姓名</th>
+                                    <th>背号</th>
+                                    <th>防御率</th>
+                                    <th>WHIP</th>
+                                    <th>局数</th>
+                                    <th>被安打</th>
+                                    <th>被得分</th>
+                                    <th>自责分</th>
+                                    <th>三振</th>
+                                    <th>保送</th>
+                                    <th>被本垒打</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="mecha-card p-6 md:p-8">
+                    <h3 class="font-heading text-xl font-bold text-white mb-6 flex items-center gap-2">
+                        <svg class="w-5 h-5 text-arena-red" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z"/>
+                        </svg>
+                        投手数据可视化
+                    </h3>
+                    <button class="btn-primary text-white px-6 py-2.5 font-heading text-sm font-bold mb-6" onclick="loadPitchingVisualization()">
+                        <svg class="w-4 h-4 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"/>
+                        </svg>
+                        生成投手统计图表
+                    </button>
+                    <div id="pitchingChart"></div>
+                </div>
+            </div>
+
+            <!-- Leaderboards Tab -->
+            <div id="leaderboardsTab" class="tab-content">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <!-- Batting Leaderboard -->
+                    <div class="mecha-card p-6 md:p-8">
+                        <h3 class="font-heading text-xl font-bold text-white mb-6 flex items-center gap-2">
+                            <svg class="w-5 h-5 text-arena-red" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"/>
+                            </svg>
+                            打击排行榜
+                        </h3>
+                        <table class="mecha-table">
+                            <thead>
+                                <tr>
+                                    <th>排名</th>
+                                    <th>球员</th>
+                                    <th>背号</th>
+                                    <th>打击率</th>
+                                    <th>上垒率</th>
+                                    <th>打点</th>
+                                </tr>
+                            </thead>
+                            <tbody id="battingLeaderboard"></tbody>
+                        </table>
+                    </div>
+
+                    <!-- Pitching Leaderboard -->
+                    <div class="mecha-card p-6 md:p-8">
+                        <h3 class="font-heading text-xl font-bold text-white mb-6 flex items-center gap-2">
+                            <svg class="w-5 h-5 text-arena-red" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"/>
+                            </svg>
+                            投手排行榜
+                        </h3>
+                        <table class="mecha-table">
+                            <thead>
+                                <tr>
+                                    <th>排名</th>
+                                    <th>球员</th>
+                                    <th>背号</th>
+                                    <th>防御率</th>
+                                    <th>WHIP</th>
+                                    <th>三振</th>
+                                </tr>
+                            </thead>
+                            <tbody id="pitchingLeaderboard"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script>
+        // Mobile Menu
+        const menuBtn = document.getElementById('mobile-menu-btn');
+        const mobileMenu = document.getElementById('mobile-menu');
+        const iconOpen = document.getElementById('menu-icon-open');
+        const iconClose = document.getElementById('menu-icon-close');
+
+        menuBtn.addEventListener('click', () => {
+            const isOpen = !mobileMenu.classList.contains('hidden');
+            mobileMenu.classList.toggle('hidden');
+            iconOpen.classList.toggle('hidden');
+            iconClose.classList.toggle('hidden');
+            menuBtn.setAttribute('aria-expanded', !isOpen);
+        });
+
+        // Tab Switching
+        function switchTab(tabId, btn) {
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById(tabId).classList.add('active');
+            btn.classList.add('active');
+        }
+    </script>
+    <script src="{{ url_for('static', filename='js/game_stats.js') }}"></script>
+</body>
+</html>

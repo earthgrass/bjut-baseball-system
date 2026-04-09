@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF批量导入 - 棒球队管理系统</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        .log-box {
+            height: 400px;
+            overflow-y: auto;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            font-family: 'Consolas', monospace;
+            font-size: 0.85rem;
+            padding: 12px;
+            border-radius: 6px;
+            white-space: pre-wrap;
+        }
+        .log-box .log-ok { color: #4ec9b0; }
+        .log-box .log-err { color: #f44747; }
+        .log-box .log-skip { color: #dcdcaa; }
+        .log-box .log-info { color: #569cd6; }
+        .file-item { cursor: pointer; transition: all 0.15s; }
+        .file-item:hover { background: rgba(0,123,255,.1); }
+        .file-item.imported { opacity: .5; }
+        .file-item.imported .status-icon { color: #28a745; }
+    </style>
+</head>
+<body>
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+    <div class="container">
+        <a class="navbar-brand" href="/"><i class="fas fa-baseball-ball me-2"></i>棒球队球员管理系统</a>
+        <div class="navbar-nav">
+            <a class="nav-link" href="/"><i class="fas fa-home"></i> 首页</a>
+            <a class="nav-link" href="/pdf_viewer"><i class="fas fa-file-pdf"></i> PDF查看器</a>
+        </div>
+    </div>
+</nav>
+
+<div class="container mt-4">
+    <h4 class="mb-3"><i class="fas fa-file-import me-2"></i>PDF比赛记录批量导入</h4>
+
+    <div class="row">
+        <!-- 左侧文件列表 -->
+        <div class="col-md-5">
+            <div class="card">
+                <div class="card-header bg-primary text-white d-flex justify-content-between">
+                    <span><i class="fas fa-list me-1"></i>PDF文件列表</span>
+                    <span id="fileCount">0 个文件</span>
+                </div>
+                <div class="card-body p-0">
+                    <div id="fileList" style="max-height:440px; overflow-y:auto;">
+                        <div class="text-center py-4 text-muted"><i class="fas fa-spinner fa-spin"></i> 加载中...</div>
+                    </div>
+                </div>
+                <div class="card-footer">
+                    <button class="btn btn-outline-secondary btn-sm me-2" onclick="previewAll()">
+                        <i class="fas fa-eye"></i> 预览全部
+                    </button>
+                    <button class="btn btn-success btn-sm" onclick="importAll(false)">
+                        <i class="fas fa-database"></i> 一键导入全部
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 右侧日志 -->
+        <div class="col-md-7">
+            <div class="card">
+                <div class="card-header bg-dark text-white d-flex justify-content-between">
+                    <span><i class="fas fa-terminal me-1"></i>导入日志</span>
+                    <button class="btn btn-sm btn-outline-light" onclick="clearLog()">清空</button>
+                </div>
+                <div class="card-body p-0">
+                    <div class="log-box" id="logBox">等待操作...</div>
+                </div>
+                <div class="card-footer d-flex justify-content-between">
+                    <div>
+                        <span class="badge bg-success" id="badgeOk">成功: 0</span>
+                        <span class="badge bg-warning text-dark" id="badgeSkip">跳过: 0</span>
+                        <span class="badge bg-danger" id="badgeErr">错误: 0</span>
+                    </div>
+                    <div id="progressText" class="text-muted small"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+const logBox = document.getElementById('logBox');
+let pdfFiles = [];
+let counters = { ok: 0, skip: 0, err: 0 };
+
+function log(msg, cls = '') {
+    const div = document.createElement('div');
+    if (cls) div.className = cls;
+    div.textContent = msg;
+    logBox.appendChild(div);
+    logBox.scrollTop = logBox.scrollHeight;
+}
+
+function clearLog() {
+    logBox.innerHTML = '';
+    counters = { ok: 0, skip: 0, err: 0 };
+    updateBadges();
+}
+
+function updateBadges() {
+    document.getElementById('badgeOk').textContent = '成功: ' + counters.ok;
+    document.getElementById('badgeSkip').textContent = '跳过: ' + counters.skip;
+    document.getElementById('badgeErr').textContent = '错误: ' + counters.err;
+}
+
+// 加载PDF文件列表
+async function loadFiles() {
+    const res = await fetch('/api/pdf/files');
+    pdfFiles = await res.json();
+    document.getElementById('fileCount').textContent = pdfFiles.length + ' 个文件';
+    const container = document.getElementById('fileList');
+    container.innerHTML = '';
+    pdfFiles.forEach((f, i) => {
+        const div = document.createElement('div');
+        div.className = 'file-item list-group-item list-group-item-action d-flex justify-content-between align-items-center';
+        div.innerHTML = `
+            <div>
+                <span class="badge bg-secondary year-badge">${f.year}</span>
+                <span class="ms-2">${f.display_name}</span>
+            </div>
+            <div>
+                <span class="status-icon"></span>
+                <small class="text-muted">${f.size}</small>
+            </div>`;
+        div.onclick = () => importOne(f.path, div);
+        container.appendChild(div);
+    });
+}
+
+// 预览全部（不写入）
+async function previewAll() {
+    clearLog();
+    log('========== 预览模式 ==========', 'log-info');
+    document.getElementById('progressText').textContent = '预览中...';
+
+    for (let i = 0; i < pdfFiles.length; i++) {
+        const f = pdfFiles[i];
+        log(`\n[${i+1}/${pdfFiles.length}] ${f.filename}`, 'log-info');
+        try {
+            const res = await fetch('/api/pdf/parse/' + encodeURIComponent(f.path));
+            const data = await res.json();
+            if (data.error) {
+                log('  错误: ' + data.error, 'log-err');
+                counters.err++;
+            } else {
+                log(`  日期: ${data.game_date || '未知'}`, 'log-info');
+                log(`  对手: ${data.opponent || '未知'}`, 'log-info');
+                log(`  打击: ${data.my_team_batting?.length || 0} 条`, 'log-ok');
+                data.my_team_batting?.forEach(b => {
+                    log(`    ${b.name} AB=${b.at_bats} H=${b.hits} RBI=${b.rbi}`, 'log-ok');
+                });
+                log(`  投手: ${data.my_team_pitching?.length || 0} 条`, 'log-ok');
+                data.my_team_pitching?.forEach(p => {
+                    log(`    ${p.name} IP=${p.innings_pitched} ER=${p.earned_runs}`, 'log-ok');
+                });
+                counters.ok++;
+            }
+        } catch(e) {
+            log('  请求失败: ' + e, 'log-err');
+            counters.err++;
+        }
+        updateBadges();
+    }
+    document.getElementById('progressText').textContent = '预览完成';
+}
+
+// 导入单个
+async function importOne(path, el) {
+    log('\n导入: ' + path, 'log-info');
+    try {
+        const res = await fetch('/api/pdf/import_one', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ filepath: path })
+        });
+        const data = await res.json();
+        if (data.error) {
+            log('  错误: ' + data.error, 'log-err');
+            counters.err++;
+        } else {
+            log(`  成功: 打击 ${data.batting}, 投手 ${data.pitching}, 跳过 ${data.skipped}`, 'log-ok');
+            if (data.new_players?.length) log('  新球员: ' + data.new_players.join(', '), 'log-info');
+            counters.ok++;
+            el?.classList.add('imported');
+        }
+    } catch(e) {
+        log('  失败: ' + e, 'log-err');
+        counters.err++;
+    }
+    updateBadges();
+}
+
+// 导入全部
+async function importAll(dryRun) {
+    if (!dryRun && !confirm('确认要导入全部PDF数据到数据库吗？')) return;
+    clearLog();
+    log('========== 开始批量导入 ==========', 'log-info');
+    document.getElementById('progressText').textContent = '导入中...';
+
+    for (let i = 0; i < pdfFiles.length; i++) {
+        const f = pdfFiles[i];
+        log(`\n[${i+1}/${pdfFiles.length}] ${f.filename}`, 'log-info');
+        await importOne(f.path, document.querySelectorAll('.file-item')[i]);
+    }
+
+    log('\n========== 导入完成 ==========', 'log-info');
+    document.getElementById('progressText').textContent = '导入完成';
+}
+
+loadFiles();
+</script>
+</body>
+</html>

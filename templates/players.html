@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>球员列表 - POWER ARENA</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@300;400;500;600;700&family=Russo+One&family=Orbitron:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --color-primary: #E60000;
+            --color-primary-dark: #B30000;
+            --color-bg: #050505;
+            --color-surface: #0A0A0A;
+            --color-surface-2: #111111;
+            --color-border: #1E1E1E;
+            --color-accent: #FF1A1A;
+        }
+
+        *, *::before, *::after { box-sizing: border-box; }
+
+        body {
+            font-family: 'Chakra Petch', sans-serif;
+            background-color: var(--color-bg);
+            color: #FFFFFF;
+            overflow-x: hidden;
+        }
+
+        .font-heading { font-family: 'Russo One', sans-serif; }
+        .font-tech { font-family: 'Orbitron', sans-serif; }
+
+        /* Background */
+        .arena-bg {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            pointer-events: none;
+            overflow: hidden;
+            background:
+                radial-gradient(ellipse at 20% 30%, rgba(230, 0, 0, 0.08) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 70%, rgba(255, 26, 26, 0.06) 0%, transparent 45%),
+                radial-gradient(ellipse at 50% 50%, rgba(20, 20, 20, 1) 0%, rgba(5, 5, 5, 1) 100%);
+        }
+
+        .arena-bg .geo-shape {
+            position: absolute;
+            border: 1px solid rgba(230, 0, 0, 0.08);
+            opacity: 0.4;
+            will-change: transform;
+        }
+
+        .arena-bg .hexagon {
+            width: 300px;
+            height: 260px;
+            background: linear-gradient(135deg, rgba(230, 0, 0, 0.03), transparent);
+            clip-path: polygon(30% 0%, 70% 0%, 100% 50%, 70% 100%, 30% 100%, 0% 50%);
+        }
+
+        .arena-bg .diamond {
+            width: 200px;
+            height: 200px;
+            background: linear-gradient(45deg, rgba(255, 26, 26, 0.02), transparent);
+            transform: rotate(45deg);
+        }
+
+        .arena-bg .geo-1 { top: 10%; left: 5%; animation: float-rotate-1 25s ease-in-out infinite; }
+        .arena-bg .geo-2 { top: 60%; right: 8%; animation: float-rotate-2 30s ease-in-out infinite; }
+        .arena-bg .geo-3 { bottom: 15%; left: 15%; animation: float-rotate-3 35s ease-in-out infinite; }
+
+        @keyframes float-rotate-1 {
+            0%, 100% { transform: translate(0, 0) rotate(0deg); }
+            33% { transform: translate(40px, 30px) rotate(120deg); }
+            66% { transform: translate(-30px, 60px) rotate(240deg); }
+        }
+
+        @keyframes float-rotate-2 {
+            0%, 100% { transform: translate(0, 0) rotate(0deg); }
+            50% { transform: translate(-50px, -40px) rotate(180deg); }
+        }
+
+        @keyframes float-rotate-3 {
+            0%, 100% { transform: translate(0, 0) rotate(0deg); opacity: 0.3; }
+            50% { transform: translate(30px, -50px) rotate(-120deg); opacity: 0.5; }
+        }
+
+        .arena-bg .grid-perspective {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 60%;
+            background:
+                linear-gradient(to top, transparent 0%, transparent 80%, rgba(5, 5, 5, 1) 100%),
+                repeating-linear-gradient(90deg, transparent, transparent 100px, rgba(230, 0, 0, 0.04) 100px, rgba(230, 0, 0, 0.04) 101px),
+                repeating-linear-gradient(0deg, transparent, transparent 80px, rgba(230, 0, 0, 0.03) 80px, rgba(230, 0, 0, 0.03) 81px);
+            transform: perspective(500px) rotateX(60deg);
+            transform-origin: bottom;
+            opacity: 0.6;
+        }
+
+        /* Mecha Card */
+        .mecha-card {
+            position: relative;
+            background: linear-gradient(135deg, rgba(17, 17, 17, 0.95) 0%, rgba(10, 10, 10, 0.9) 100%);
+            clip-path: polygon(0 0, calc(100% - 24px) 0, 100% 24px, 100% 100%, 24px 100%, 0 calc(100% - 24px));
+            border: 1px solid rgba(230, 0, 0, 0.15);
+            transition: all 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+            overflow: hidden;
+        }
+
+        .mecha-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 24px;
+            height: 2px;
+            background: linear-gradient(90deg, rgba(230, 0, 0, 0.6), transparent);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .mecha-card::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at 50% 0%, rgba(230, 0, 0, 0.08) 0%, transparent 70%);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            pointer-events: none;
+        }
+
+        .mecha-card:hover {
+            transform: translateY(-4px) scale(1.02);
+            box-shadow: 0 0 30px rgba(230, 0, 0, 0.4), 0 0 60px rgba(230, 0, 0, 0.2), 0 8px 32px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(230, 0, 0, 0.2);
+            border-color: rgba(230, 0, 0, 0.4);
+        }
+
+        .mecha-card:hover::before, .mecha-card:hover::after { opacity: 1; }
+
+        /* Stat Badge */
+        .stat-badge {
+            clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 10px 100%, 0 calc(100% - 10px));
+        }
+
+        /* Button */
+        .btn-primary {
+            clip-path: polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 16px 100%, 0 calc(100% - 16px));
+            background: linear-gradient(135deg, #E60000 0%, #990000 100%);
+            transition: all 0.25s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn-primary::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.2) 0%, transparent 50%);
+            opacity: 0;
+            transition: opacity 0.25s ease;
+        }
+
+        .btn-primary:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 35px rgba(230, 0, 0, 0.7), 0 0 80px rgba(230, 0, 0, 0.3);
+        }
+
+        .btn-primary:hover::before { opacity: 1; }
+
+        .btn-outline {
+            clip-path: polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 16px 100%, 0 calc(100% - 16px));
+            border: 2px solid #E60000;
+            background: transparent;
+            transition: all 0.25s ease;
+        }
+
+        .btn-outline:hover {
+            background: linear-gradient(135deg, rgba(230, 0, 0, 0.2) 0%, rgba(153, 0, 0, 0.2) 100%);
+            transform: scale(1.05);
+            box-shadow: 0 0 30px rgba(230, 0, 0, 0.4);
+        }
+
+        /* Nav Link */
+        .nav-link {
+            position: relative;
+        }
+
+        .nav-link::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 50%;
+            right: 50%;
+            height: 2px;
+            background: #E60000;
+            transition: all 0.3s ease;
+            box-shadow: 0 0 8px rgba(230, 0, 0, 0.6);
+        }
+
+        .nav-link:hover::after, .nav-link.active::after { left: 0; right: 0; }
+
+        /* Section Divider */
+        .section-divider {
+            height: 1px;
+            background: linear-gradient(90deg, transparent 0%, rgba(230, 0, 0, 0.3) 20%, rgba(230, 0, 0, 0.5) 50%, rgba(230, 0, 0, 0.3) 80%, transparent 100%);
+            box-shadow: 0 0 10px rgba(230, 0, 0, 0.3);
+        }
+
+        /* Table */
+        .mecha-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+        }
+
+        .mecha-table thead th {
+            background: linear-gradient(135deg, rgba(230, 0, 0, 0.15) 0%, rgba(153, 0, 0, 0.1) 100%);
+            color: #E60000;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            font-size: 0.75rem;
+            padding: 1rem;
+            border-bottom: 2px solid rgba(230, 0, 0, 0.3);
+            text-align: left;
+        }
+
+        .mecha-table tbody tr {
+            transition: all 0.2s ease;
+        }
+
+        .mecha-table tbody tr:hover {
+            background: rgba(230, 0, 0, 0.05);
+        }
+
+        .mecha-table tbody td {
+            padding: 1rem;
+            border-bottom: 1px solid rgba(230, 0, 0, 0.1);
+        }
+
+        .jersey-number {
+            font-family: 'Russo One', sans-serif;
+            font-size: 1.5rem;
+            font-weight: 900;
+            font-style: italic;
+            color: #E60000;
+            text-shadow: 0 0 10px rgba(230, 0, 0, 0.3);
+        }
+
+        /* Modal */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 100;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(4px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+        }
+
+        .modal-overlay.show {
+            display: flex;
+        }
+
+        .modal-dialog {
+            background: linear-gradient(135deg, rgba(17, 17, 17, 0.98) 0%, rgba(10, 10, 10, 0.98) 100%);
+            border: 1px solid rgba(230, 0, 0, 0.3);
+            clip-path: polygon(0 0, calc(100% - 32px) 0, 100% 32px, 100% 100%, 32px 100%, 0 calc(100% - 32px));
+            width: 100%;
+            max-width: 800px;
+            max-height: 90vh;
+            overflow-y: auto;
+            position: relative;
+        }
+
+        .modal-header {
+            border-bottom: 1px solid rgba(230, 0, 0, 0.2);
+            padding: 1.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .modal-body {
+            padding: 1.5rem;
+        }
+
+        .modal-footer {
+            border-top: 1px solid rgba(230, 0, 0, 0.2);
+            padding: 1.5rem;
+            display: flex;
+            gap: 0.75rem;
+            justify-content: flex-end;
+        }
+
+        .modal-close {
+            background: transparent;
+            border: none;
+            color: #9CA3AF;
+            font-size: 1.5rem;
+            cursor: pointer;
+            transition: color 0.2s;
+            line-height: 1;
+        }
+
+        .modal-close:hover {
+            color: #E60000;
+        }
+
+        /* Form */
+        .form-input {
+            background: rgba(10, 10, 10, 0.8);
+            border: 1px solid rgba(230, 0, 0, 0.2);
+            color: #FFFFFF;
+            padding: 0.75rem 1rem;
+            transition: all 0.3s ease;
+            clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: #E60000;
+            box-shadow: 0 0 15px rgba(230, 0, 0, 0.3);
+        }
+
+        .form-input::placeholder {
+            color: #6B7280;
+        }
+
+        .form-label {
+            color: #9CA3AF;
+            font-size: 0.875rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.5rem;
+            display: block;
+        }
+
+        .form-check {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .form-check-input {
+            width: 1.25rem;
+            height: 1.25rem;
+            accent-color: #E60000;
+            cursor: pointer;
+        }
+
+        .form-check-label {
+            color: #D1D5DB;
+            font-size: 0.875rem;
+            cursor: pointer;
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #050505; }
+        ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #E60000, #990000); border-radius: 0; }
+        ::-webkit-scrollbar-thumb:hover { background: linear-gradient(180deg, #FF1A1A, #B30000); }
+
+        @media (prefers-reduced-motion: reduce) {
+            .arena-bg .geo-shape { animation: none !important; }
+        }
+    </style>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        arena: { bg: '#050505', surface: '#0A0A0A', surface2: '#111111', red: '#E60000', redDark: '#990000', redAccent: '#FF1A1A' }
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="min-h-screen relative">
+
+    <!-- Background -->
+    <div class="arena-bg" aria-hidden="true">
+        <div class="geo-shape hexagon geo-1"></div>
+        <div class="geo-shape diamond geo-2"></div>
+        <div class="geo-shape hexagon geo-3"></div>
+        <div class="grid-perspective"></div>
+    </div>
+
+    <!-- Content -->
+    <div class="relative z-10">
+
+        <!-- Navigation -->
+        <nav class="bg-arena-surface/90 backdrop-blur-md border-b border-arena-red/20 sticky top-0 z-50">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6">
+                <div class="flex items-center justify-between h-16">
+                    <a href="/" class="font-heading text-xl sm:text-2xl text-white italic tracking-tighter flex items-center gap-2 hover:text-arena-red transition-colors duration-200">
+                        <svg class="w-7 h-7 text-arena-red" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2" />
+                            <line x1="12" y1="22" x2="12" y2="15.5" />
+                            <polyline points="22 8.5 12 15.5 2 8.5" />
+                        </svg>
+                        POWER <span class="text-arena-red">ARENA</span>
+                    </a>
+
+                    <div class="hidden lg:flex items-center gap-1">
+                        <a href="/" class="nav-link px-4 py-2 text-gray-300 font-semibold text-sm hover:text-white transition-colors duration-200">首页</a>
+                        <a href="/players" class="nav-link active px-4 py-2 text-arena-red font-semibold text-sm hover:text-white transition-colors duration-200">球员列表</a>
+                        <a href="/add_player" class="nav-link px-4 py-2 text-gray-300 font-semibold text-sm hover:text-white transition-colors duration-200">添加球员</a>
+                        <a href="/game_stats" class="nav-link px-4 py-2 text-gray-300 font-semibold text-sm hover:text-white transition-colors duration-200">比赛数据</a>
+                        <a href="/add_game_record" class="nav-link px-4 py-2 text-gray-300 font-semibold text-sm hover:text-white transition-colors duration-200">录入记录</a>
+                        <a href="/stats" class="nav-link px-4 py-2 text-gray-300 font-semibold text-sm hover:text-white transition-colors duration-200">数据统计</a>
+                        <a href="/matchup_stats" class="nav-link px-4 py-2 text-gray-300 font-semibold text-sm hover:text-white transition-colors duration-200">对局信息</a>
+                    </div>
+
+                    <button class="lg:hidden text-gray-300 hover:text-arena-red transition-colors p-2 cursor-pointer" id="mobile-menu-btn" aria-label="打开导航菜单">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path id="menu-icon-open" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+                            <path id="menu-icon-close" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" class="hidden"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <div class="lg:hidden hidden border-t border-arena-red/10" id="mobile-menu">
+                <div class="px-4 py-3 space-y-1 bg-arena-surface/95 backdrop-blur-md">
+                    <a href="/" class="block px-4 py-3 text-gray-300 font-semibold text-sm hover:text-white hover:bg-arena-red/10 transition-colors">首页</a>
+                    <a href="/players" class="block px-4 py-3 text-arena-red font-semibold text-sm bg-arena-red/10">球员列表</a>
+                    <a href="/add_player" class="block px-4 py-3 text-gray-300 font-semibold text-sm hover:text-white hover:bg-arena-red/10 transition-colors">添加球员</a>
+                    <a href="/game_stats" class="block px-4 py-3 text-gray-300 font-semibold text-sm hover:text-white hover:bg-arena-red/10 transition-colors">比赛数据</a>
+                    <a href="/add_game_record" class="block px-4 py-3 text-gray-300 font-semibold text-sm hover:text-white hover:bg-arena-red/10 transition-colors">录入记录</a>
+                    <a href="/stats" class="block px-4 py-3 text-gray-300 font-semibold text-sm hover:text-white hover:bg-arena-red/10 transition-colors">数据统计</a>
+                    <a href="/matchup_stats" class="block px-4 py-3 text-gray-300 font-semibold text-sm hover:text-white hover:bg-arena-red/10 transition-colors">对局信息</a>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Main Content -->
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+
+            <!-- Header -->
+            <div class="text-center mb-12">
+                <p class="text-arena-red text-xs font-bold tracking-[0.4em] uppercase mb-3">Roster</p>
+                <h1 class="font-heading text-5xl md:text-6xl font-black italic tracking-tighter mb-6">
+                    球员 <span class="text-arena-red">阵容</span>
+                </h1>
+                <div class="flex flex-col sm:flex-row gap-4 justify-center">
+                    <a href="/add_player" class="btn-primary text-white px-8 py-3 font-heading text-sm font-bold inline-flex items-center justify-center gap-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"/>
+                        </svg>
+                        添加新球员
+                    </a>
+                    <a href="/" class="btn-outline text-white px-8 py-3 font-heading text-sm font-bold inline-flex items-center justify-center gap-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
+                        </svg>
+                        返回首页
+                    </a>
+                </div>
+            </div>
+
+            <!-- Divider -->
+            <div class="section-divider max-w-5xl mx-auto mb-12" aria-hidden="true"></div>
+
+            <!-- Players Table -->
+            <div class="mecha-card p-6 md:p-8">
+                <div class="overflow-x-auto">
+                    <table class="mecha-table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>姓名</th>
+                                <th>背号</th>
+                                <th>位置</th>
+                                <th>打击率</th>
+                                <th>本垒打</th>
+                                <th>打点</th>
+                                <th>OPS</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="playersTableBody">
+                            <!-- Dynamic data -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Edit Modal -->
+        <div class="modal-overlay" id="editModal">
+            <div class="modal-dialog">
+                <div class="modal-header">
+                    <h5 class="font-heading text-xl font-bold text-white">编辑球员信息</h5>
+                    <button type="button" class="modal-close" onclick="closeEditModal()">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <form id="editForm">
+                        <input type="hidden" id="editPlayerId">
+                        <div id="editFormContent"></div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn-outline text-white px-6 py-2.5 font-heading text-sm font-bold" onclick="closeEditModal()">取消</button>
+                    <button type="button" class="btn-primary text-white px-6 py-2.5 font-heading text-sm font-bold" onclick="savePlayerChanges()">保存更改</button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script>
+        // Mobile Menu
+        const menuBtn = document.getElementById('mobile-menu-btn');
+        const mobileMenu = document.getElementById('mobile-menu');
+        const iconOpen = document.getElementById('menu-icon-open');
+        const iconClose = document.getElementById('menu-icon-close');
+
+        menuBtn.addEventListener('click', () => {
+            const isOpen = !mobileMenu.classList.contains('hidden');
+            mobileMenu.classList.toggle('hidden');
+            iconOpen.classList.toggle('hidden');
+            iconClose.classList.toggle('hidden');
+            menuBtn.setAttribute('aria-expanded', !isOpen);
+        });
+
+        // Load Players
+        $(document).ready(function() {
+            loadPlayers();
+        });
+
+        function loadPlayers() {
+            $.get('/api/players', function(players) {
+                const tbody = $('#playersTableBody');
+                tbody.empty();
+
+                players.forEach((player, index) => {
+                    const avg = player.batting_average ? player.batting_average.toFixed(3) : '.000';
+                    const ops = player.ops ? player.ops.toFixed(3) : '.000';
+                    const hr = player.home_runs_batting || 0;
+                    const rbi = player.rbi_total || 0;
+
+                    tbody.append(`
+                        <tr class="hover:bg-arena-red/5 transition-colors">
+                            <td><span class="jersey-number">${player.jersey_number || '00'}</span></td>
+                            <td class="font-semibold text-white">${player.name}</td>
+                            <td>${player.jersey_number || '00'}</td>
+                            <td>${player.primary_position || '未指定'}</td>
+                            <td class="text-arena-red font-bold">${avg}</td>
+                            <td class="font-semibold">${hr}</td>
+                            <td class="font-semibold">${rbi}</td>
+                            <td class="text-arena-red font-bold">${ops}</td>
+                            <td>
+                                <div class="flex gap-2">
+                                    <button onclick="editPlayer(${player.id})" class="btn-outline text-white px-4 py-1.5 font-heading text-xs font-bold">编辑</button>
+                                    <button onclick="deletePlayer(${player.id})" class="btn-primary text-white px-4 py-1.5 font-heading text-xs font-bold">删除</button>
+                                </div>
+                            </td>
+                        </tr>
+                    `);
+                });
+            });
+        }
+
+        function editPlayer(id) {
+            $.get(`/api/players/${id}`, function(player) {
+                $('#editPlayerId').val(player.id);
+                const positions = ['投手', '捕手', '一垒手', '二垒手', '三垒手', '游击手', '左外野手', '中外野手', '右外野手'];
+
+                let positionsHtml = positions.map(pos => `
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" value="${pos}" id="pos_${pos}"
+                            ${player.positions && player.positions.includes(pos) ? 'checked' : ''}>
+                        <label class="form-check-label" for="pos_${pos}">${pos}</label>
+                    </div>
+                `).join('');
+
+                $('#editFormContent').html(`
+                    <div class="space-y-4">
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="form-label">姓名 *</label>
+                                <input type="text" class="form-input w-full" id="editName" value="${player.name}" required>
+                            </div>
+                            <div>
+                                <label class="form-label">背号 *</label>
+                                <input type="text" class="form-input w-full" id="editJerseyNumber" value="${player.jersey_number || ''}" required>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="form-label">投手标记</label>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="editIsPitcher" ${player.is_pitcher ? 'checked' : ''}>
+                                <label class="form-check-label" for="editIsPitcher">是否为投手</label>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="form-label">守备位置（可多选）</label>
+                            <div class="grid grid-cols-3 gap-2">${positionsHtml}</div>
+                        </div>
+
+                        <div>
+                            <label class="form-label">主位置</label>
+                            <select class="form-input w-full" id="editPrimaryPosition">
+                                <option value="">选择主位置</option>
+                                ${positions.map(pos => `<option value="${pos}" ${player.primary_position === pos ? 'selected' : ''}>${pos}</option>`).join('')}
+                            </select>
+                        </div>
+                    </div>
+                `);
+
+                // Show modal
+                const modal = document.getElementById('editModal');
+                modal.classList.add('show');
+            }).fail(function() {
+                alert('获取球员数据失败，请重试。');
+            });
+        }
+
+        function closeEditModal() {
+            const modal = document.getElementById('editModal');
+            modal.classList.remove('show');
+        }
+
+        function savePlayerChanges() {
+            const id = $('#editPlayerId').val();
+            const positions = [];
+            $('input[type="checkbox"]:checked').each(function() {
+                if (this.id.startsWith('pos_') && this.id !== 'editIsPitcher') {
+                    positions.push($(this).val());
+                }
+            });
+
+            const data = {
+                name: $('#editName').val(),
+                jersey_number: $('#editJerseyNumber').val(),
+                is_pitcher: $('#editIsPitcher').is(':checked'),
+                positions: positions,
+                primary_position: $('#editPrimaryPosition').val()
+            };
+
+            $.ajax({
+                url: `/api/players/${id}`,
+                type: 'PUT',
+                contentType: 'application/json',
+                data: JSON.stringify(data),
+                success: function() {
+                    alert('球员信息更新成功！');
+                    closeEditModal();
+                    loadPlayers();
+                },
+                error: function() {
+                    alert('更新失败，请重试。');
+                }
+            });
+        }
+
+        function deletePlayer(id) {
+            if (confirm('确定要删除这名球员吗？此操作无法撤销。')) {
+                $.ajax({
+                    url: `/api/players/${id}`,
+                    type: 'DELETE',
+                    success: function() {
+                        alert('球员已删除');
+                        loadPlayers();
+                    },
+                    error: function() {
+                        alert('删除失败，请重试。');
+                    }
+                });
+            }
+        }
+
+        // Close modal on background click
+        document.getElementById('editModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeEditModal();
+            }
+        });
+
+        // Close modal on Escape key
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                closeEditModal();
+            }
+        });
+    </script>
+</body>
+</html>

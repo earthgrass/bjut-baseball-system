@@ -1,0 +1,843 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>数据统计 - POWER ARENA</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@300;400;500;600;700&family=Russo+One&family=Orbitron:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --color-primary: #E60000;
+            --color-primary-dark: #B30000;
+            --color-bg: #050505;
+            --color-surface: #0A0A0A;
+            --color-surface-2: #111111;
+            --color-border: #1E1E1E;
+            --color-accent: #FF1A1A;
+        }
+
+        *, *::before, *::after { box-sizing: border-box; }
+
+        body {
+            font-family: 'Chakra Petch', sans-serif;
+            background-color: var(--color-bg);
+            color: #FFFFFF;
+            overflow-x: hidden;
+        }
+
+        .font-heading { font-family: 'Russo One', sans-serif; }
+        .font-tech { font-family: 'Orbitron', sans-serif; }
+
+        .arena-bg {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            pointer-events: none;
+            overflow: hidden;
+            background:
+                radial-gradient(ellipse at 20% 30%, rgba(230, 0, 0, 0.08) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 70%, rgba(255, 26, 26, 0.06) 0%, transparent 45%),
+                radial-gradient(ellipse at 50% 50%, rgba(20, 20, 20, 1) 0%, rgba(5, 5, 5, 1) 100%);
+        }
+
+        .arena-bg .geo-shape {
+            position: absolute;
+            border: 1px solid rgba(230, 0, 0, 0.08);
+            opacity: 0.4;
+            will-change: transform;
+        }
+
+        .arena-bg .hexagon {
+            width: 300px;
+            height: 260px;
+            background: linear-gradient(135deg, rgba(230, 0, 0, 0.03), transparent);
+            clip-path: polygon(30% 0%, 70% 0%, 100% 50%, 70% 100%, 30% 100%, 0% 50%);
+        }
+
+        .arena-bg .diamond {
+            width: 200px;
+            height: 200px;
+            background: linear-gradient(45deg, rgba(255, 26, 26, 0.02), transparent);
+            transform: rotate(45deg);
+        }
+
+        .arena-bg .geo-1 { top: 10%; left: 5%; animation: float-rotate-1 25s ease-in-out infinite; }
+        .arena-bg .geo-2 { top: 60%; right: 8%; animation: float-rotate-2 30s ease-in-out infinite; }
+        .arena-bg .geo-3 { bottom: 15%; left: 15%; animation: float-rotate-3 35s ease-in-out infinite; }
+
+        @keyframes float-rotate-1 {
+            0%, 100% { transform: translate(0, 0) rotate(0deg); }
+            33% { transform: translate(40px, 30px) rotate(120deg); }
+            66% { transform: translate(-30px, 60px) rotate(240deg); }
+        }
+        @keyframes float-rotate-2 {
+            0%, 100% { transform: translate(0, 0) rotate(0deg); }
+            50% { transform: translate(-50px, -40px) rotate(180deg); }
+        }
+        @keyframes float-rotate-3 {
+            0%, 100% { transform: translate(0, 0) rotate(0deg); opacity: 0.3; }
+            50% { transform: translate(30px, -50px) rotate(-120deg); opacity: 0.5; }
+        }
+
+        .arena-bg .grid-perspective {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 60%;
+            background:
+                linear-gradient(to top, transparent 0%, transparent 80%, rgba(5, 5, 5, 1) 100%),
+                repeating-linear-gradient(90deg, transparent, transparent 100px, rgba(230, 0, 0, 0.04) 100px, rgba(230, 0, 0, 0.04) 101px),
+                repeating-linear-gradient(0deg, transparent, transparent 80px, rgba(230, 0, 0, 0.03) 80px, rgba(230, 0, 0, 0.03) 81px);
+            transform: perspective(500px) rotateX(60deg);
+            transform-origin: bottom;
+            opacity: 0.6;
+        }
+
+        .mecha-card {
+            position: relative;
+            background: linear-gradient(135deg, rgba(17, 17, 17, 0.95) 0%, rgba(10, 10, 10, 0.9) 100%);
+            clip-path: polygon(0 0, calc(100% - 24px) 0, 100% 24px, 100% 100%, 24px 100%, 0 calc(100% - 24px));
+            border: 1px solid rgba(230, 0, 0, 0.15);
+            transition: all 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+            overflow: hidden;
+        }
+
+        .mecha-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 24px;
+            height: 2px;
+            background: linear-gradient(90deg, rgba(230, 0, 0, 0.6), transparent);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .mecha-card::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at 50% 0%, rgba(230, 0, 0, 0.08) 0%, transparent 70%);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            pointer-events: none;
+        }
+
+        .mecha-card:hover {
+            transform: translateY(-4px) scale(1.02);
+            box-shadow: 0 0 30px rgba(230, 0, 0, 0.4), 0 0 60px rgba(230, 0, 0, 0.2), 0 8px 32px rgba(0, 0, 0, 0.5);
+            border-color: rgba(230, 0, 0, 0.4);
+        }
+
+        .mecha-card:hover::before, .mecha-card:hover::after { opacity: 1; }
+
+        .btn-primary {
+            clip-path: polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 16px 100%, 0 calc(100% - 16px));
+            background: linear-gradient(135deg, #E60000 0%, #990000 100%);
+            transition: all 0.25s ease;
+        }
+
+        .btn-primary:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 35px rgba(230, 0, 0, 0.7), 0 0 80px rgba(230, 0, 0, 0.3);
+        }
+
+        .btn-outline {
+            clip-path: polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 16px 100%, 0 calc(100% - 16px));
+            border: 2px solid #E60000;
+            background: transparent;
+            transition: all 0.25s ease;
+        }
+
+        .btn-outline:hover {
+            background: linear-gradient(135deg, rgba(230, 0, 0, 0.2) 0%, rgba(153, 0, 0, 0.2) 100%);
+            transform: scale(1.05);
+            box-shadow: 0 0 30px rgba(230, 0, 0, 0.4);
+        }
+
+        .nav-link { position: relative; }
+        .nav-link::after {
+            content: '';
+            position: absolute;
+            bottom: 0; left: 50%; right: 50%;
+            height: 2px;
+            background: #E60000;
+            transition: all 0.3s ease;
+            box-shadow: 0 0 8px rgba(230, 0, 0, 0.6);
+        }
+        .nav-link:hover::after, .nav-link.active::after { left: 0; right: 0; }
+
+        .section-divider {
+            height: 1px;
+            background: linear-gradient(90deg, transparent 0%, rgba(230, 0, 0, 0.3) 20%, rgba(230, 0, 0, 0.5) 50%, rgba(230, 0, 0, 0.3) 80%, transparent 100%);
+            box-shadow: 0 0 10px rgba(230, 0, 0, 0.3);
+        }
+
+        .leaderboard-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+        }
+
+        .leaderboard-table thead th {
+            background: linear-gradient(135deg, rgba(230, 0, 0, 0.15) 0%, rgba(153, 0, 0, 0.1) 100%);
+            color: #E60000;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            font-size: 0.75rem;
+            padding: 0.75rem 1rem;
+            border-bottom: 2px solid rgba(230, 0, 0, 0.3);
+            text-align: left;
+            white-space: nowrap;
+        }
+
+        .leaderboard-table tbody tr {
+            transition: all 0.2s ease;
+        }
+
+        .leaderboard-table tbody tr:hover {
+            background: rgba(230, 0, 0, 0.05);
+        }
+
+        .leaderboard-table tbody td {
+            padding: 0.7rem 1rem;
+            border-bottom: 1px solid rgba(230, 0, 0, 0.08);
+            white-space: nowrap;
+        }
+
+        .rank-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 32px;
+            height: 32px;
+            font-weight: 900;
+            font-size: 0.85rem;
+            clip-path: polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 6px 100%, 0 calc(100% - 6px));
+        }
+
+        .rank-1 { background: linear-gradient(135deg, #FFD700, #B8860B); color: #000; }
+        .rank-2 { background: linear-gradient(135deg, #C0C0C0, #808080); color: #000; }
+        .rank-3 { background: linear-gradient(135deg, #CD7F32, #8B4513); color: #fff; }
+        .rank-other { background: rgba(230, 0, 0, 0.15); color: #999; }
+
+        .tab-btn {
+            padding: 0.6rem 1.5rem;
+            font-weight: 700;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            transition: all 0.25s ease;
+            clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 10px 100%, 0 calc(100% - 10px));
+            border: 1px solid rgba(230, 0, 0, 0.2);
+            cursor: pointer;
+        }
+
+        .tab-btn:hover {
+            border-color: rgba(230, 0, 0, 0.5);
+            background: rgba(230, 0, 0, 0.1);
+        }
+
+        .tab-btn.active {
+            background: linear-gradient(135deg, #E60000, #990000);
+            color: #fff;
+            border-color: transparent;
+            box-shadow: 0 0 20px rgba(230, 0, 0, 0.4);
+        }
+
+        .stat-bar {
+            height: 4px;
+            background: rgba(230, 0, 0, 0.1);
+            border-radius: 0;
+            overflow: hidden;
+        }
+
+        .stat-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #E60000, #FF1A1A);
+            transition: width 0.8s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #050505; }
+        ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #E60000, #990000); border-radius: 0; }
+
+        @media (prefers-reduced-motion: reduce) {
+            .arena-bg .geo-shape { animation: none !important; }
+            .mecha-card:hover { transform: none !important; }
+        }
+    </style>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        arena: { bg: '#050505', surface: '#0A0A0A', surface2: '#111111', red: '#E60000', redDark: '#990000', redAccent: '#FF1A1A' }
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="min-h-screen relative">
+
+    <!-- Background -->
+    <div class="arena-bg" aria-hidden="true">
+        <div class="geo-shape hexagon geo-1"></div>
+        <div class="geo-shape diamond geo-2"></div>
+        <div class="geo-shape hexagon geo-3"></div>
+        <div class="grid-perspective"></div>
+    </div>
+
+    <!-- Content -->
+    <div class="relative z-10">
+
+        <!-- Navigation -->
+        <nav class="bg-arena-surface/90 backdrop-blur-md border-b border-arena-red/20 sticky top-0 z-50">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6">
+                <div class="flex items-center justify-between h-16">
+                    <a href="/" class="font-heading text-xl sm:text-2xl text-white italic tracking-tighter flex items-center gap-2 hover:text-arena-red transition-colors duration-200">
+                        <svg class="w-7 h-7 text-arena-red" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2" />
+                            <line x1="12" y1="22" x2="12" y2="15.5" />
+                            <polyline points="22 8.5 12 15.5 2 8.5" />
+                        </svg>
+                        POWER <span class="text-arena-red">ARENA</span>
+                    </a>
+
+                    <div class="hidden lg:flex items-center gap-1">
+                        <a href="/" class="nav-link px-4 py-2 text-gray-300 font-semibold text-sm hover:text-white transition-colors duration-200">首页</a>
+                        <a href="/players" class="nav-link px-4 py-2 text-gray-300 font-semibold text-sm hover:text-white transition-colors duration-200">球员列表</a>
+                        <a href="/add_player" class="nav-link px-4 py-2 text-gray-300 font-semibold text-sm hover:text-white transition-colors duration-200">添加球员</a>
+                        <a href="/game_stats" class="nav-link px-4 py-2 text-gray-300 font-semibold text-sm hover:text-white transition-colors duration-200">比赛数据</a>
+                        <a href="/add_game_record" class="nav-link px-4 py-2 text-gray-300 font-semibold text-sm hover:text-white transition-colors duration-200">录入记录</a>
+                        <a href="/stats" class="nav-link active px-4 py-2 text-arena-red font-semibold text-sm hover:text-white transition-colors duration-200">数据统计</a>
+                        <a href="/matchup_stats" class="nav-link px-4 py-2 text-gray-300 font-semibold text-sm hover:text-white transition-colors duration-200">对局信息</a>
+                        <a href="/upload_pdf" class="nav-link px-4 py-2 text-gray-300 font-semibold text-sm hover:text-white transition-colors duration-200">上传PDF</a>
+                    </div>
+
+                    <button class="lg:hidden text-gray-300 hover:text-arena-red transition-colors p-2 cursor-pointer" id="mobile-menu-btn" aria-label="打开导航菜单">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path id="menu-icon-open" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+                            <path id="menu-icon-close" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" class="hidden"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <div class="lg:hidden hidden border-t border-arena-red/10" id="mobile-menu">
+                <div class="px-4 py-3 space-y-1 bg-arena-surface/95 backdrop-blur-md">
+                    <a href="/" class="block px-4 py-3 text-gray-300 font-semibold text-sm hover:text-white hover:bg-arena-red/10 transition-colors">首页</a>
+                    <a href="/players" class="block px-4 py-3 text-gray-300 font-semibold text-sm hover:text-white hover:bg-arena-red/10 transition-colors">球员列表</a>
+                    <a href="/add_player" class="block px-4 py-3 text-gray-300 font-semibold text-sm hover:text-white hover:bg-arena-red/10 transition-colors">添加球员</a>
+                    <a href="/game_stats" class="block px-4 py-3 text-gray-300 font-semibold text-sm hover:text-white hover:bg-arena-red/10 transition-colors">比赛数据</a>
+                    <a href="/add_game_record" class="block px-4 py-3 text-gray-300 font-semibold text-sm hover:text-white hover:bg-arena-red/10 transition-colors">录入记录</a>
+                    <a href="/stats" class="block px-4 py-3 text-arena-red font-semibold text-sm bg-arena-red/10">数据统计</a>
+                    <a href="/matchup_stats" class="block px-4 py-3 text-gray-300 font-semibold text-sm hover:text-white hover:bg-arena-red/10 transition-colors">对局信息</a>
+                    <a href="/upload_pdf" class="block px-4 py-3 text-gray-300 font-semibold text-sm hover:text-white hover:bg-arena-red/10 transition-colors">上传PDF</a>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Main Content -->
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+
+            <!-- Header -->
+            <div class="text-center mb-12">
+                <p class="text-arena-red text-xs font-bold tracking-[0.4em] uppercase mb-3">Leaderboard</p>
+                <h1 class="font-heading text-5xl md:text-6xl font-black italic tracking-tighter mb-6">
+                    数据 <span class="text-arena-red">排行榜</span>
+                </h1>
+                <a href="/" class="btn-outline text-white px-8 py-3 font-heading text-sm font-bold inline-flex items-center justify-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
+                    </svg>
+                    返回首页
+                </a>
+            </div>
+
+            <!-- Divider -->
+            <div class="section-divider max-w-5xl mx-auto mb-10" aria-hidden="true"></div>
+
+            <!-- Category Labels & Tab Navigation -->
+            <!-- 打击数据 -->
+            <div class="text-center mb-4">
+                <span class="text-xs font-bold tracking-[0.3em] uppercase text-gray-500">— 打击数据 —</span>
+            </div>
+            <div class="flex flex-wrap gap-3 mb-6 justify-center" id="battingTabs">
+                <button class="tab-btn active text-white" data-sort="batting_average" onclick="switchTab('batting_average')">
+                    打击率
+                </button>
+                <button class="tab-btn text-gray-400" data-sort="on_base_percentage" onclick="switchTab('on_base_percentage')">
+                    上垒率
+                </button>
+                <button class="tab-btn text-gray-400" data-sort="ops" onclick="switchTab('ops')">
+                    OPS
+                </button>
+                <button class="tab-btn text-gray-400" data-sort="at_bats" onclick="switchTab('at_bats')">
+                    打数
+                </button>
+                <button class="tab-btn text-gray-400" data-sort="hits" onclick="switchTab('hits')">
+                    安打
+                </button>
+                <button class="tab-btn text-gray-400" data-sort="rbi" onclick="switchTab('rbi')">
+                    打点
+                </button>
+                <button class="tab-btn text-gray-400" data-sort="runs" onclick="switchTab('runs')">
+                    得分
+                </button>
+                <button class="tab-btn text-gray-400" data-sort="home_runs" onclick="switchTab('home_runs')">
+                    本垒打
+                </button>
+                <button class="tab-btn text-gray-400" data-sort="stolen_bases" onclick="switchTab('stolen_bases')">
+                    偷垒
+                </button>
+                <button class="tab-btn text-gray-400" data-sort="strikeouts" onclick="switchTab('strikeouts')">
+                    三振
+                </button>
+                <button class="tab-btn text-gray-400" data-sort="walks" onclick="switchTab('walks')">
+                    保送
+                </button>
+            </div>
+
+            <div class="section-divider max-w-3xl mx-auto mb-6" aria-hidden="true"></div>
+
+            <!-- 投手数据 -->
+            <div class="text-center mb-4">
+                <span class="text-xs font-bold tracking-[0.3em] uppercase text-gray-500">— 投手数据 —</span>
+            </div>
+            <div class="flex flex-wrap gap-3 mb-10 justify-center" id="pitchingTabs">
+                <button class="tab-btn text-gray-400" data-sort="era" onclick="switchTab('era')">
+                    防御率
+                </button>
+                <button class="tab-btn text-gray-400" data-sort="pitcher_strikeouts" onclick="switchTab('pitcher_strikeouts')">
+                    三振
+                </button>
+                <button class="tab-btn text-gray-400" data-sort="innings_pitched" onclick="switchTab('innings_pitched')">
+                    局数
+                </button>
+                <button class="tab-btn text-gray-400" data-sort="pitcher_walks" onclick="switchTab('pitcher_walks')">
+                    保送
+                </button>
+                <button class="tab-btn text-gray-400" data-sort="whip" onclick="switchTab('whip')">
+                    WHIP
+                </button>
+                <button class="tab-btn text-gray-400" data-sort="hits_allowed" onclick="switchTab('hits_allowed')">
+                    被打安打
+                </button>
+                <button class="tab-btn text-gray-400" data-sort="earned_runs" onclick="switchTab('earned_runs')">
+                    自责分
+                </button>
+            </div>
+
+            <!-- Leaderboard Table -->
+            <div class="mecha-card p-6 md:p-8 mb-10">
+                <div class="flex items-center justify-between mb-6">
+                    <h3 class="font-heading text-xl font-bold text-white flex items-center gap-2">
+                        <svg class="w-5 h-5 text-arena-red" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"/>
+                        </svg>
+                        <span id="leaderboardTitle">打击率排行榜</span>
+                    </h3>
+                    <div class="flex items-center gap-2" id="filterControl">
+                        <label class="text-gray-500 text-sm">最低打数:</label>
+                        <select class="bg-arena-surface border border-arena-red/20 text-white px-3 py-1.5 text-sm" id="minAbFilter" onchange="renderLeaderboard()">
+                            <option value="0">全部</option>
+                            <option value="5" selected>>= 5</option>
+                            <option value="10">>= 10</option>
+                            <option value="20">>= 20</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <!-- Batting Table -->
+                    <table class="leaderboard-table" id="battingTable">
+                        <thead>
+                            <tr>
+                                <th>排名</th>
+                                <th>球员</th>
+                                <th>背号</th>
+                                <th>位置</th>
+                                <th>打数</th>
+                                <th>安打</th>
+                                <th>得分</th>
+                                <th>打点</th>
+                                <th>保送</th>
+                                <th>三振</th>
+                                <th id="highlightCol" class="text-arena-red">打击率</th>
+                                <th>上垒率</th>
+                            </tr>
+                        </thead>
+                        <tbody id="leaderboardBody"></tbody>
+                    </table>
+                    <!-- Pitching Table -->
+                    <table class="leaderboard-table" id="pitchingTable" style="display:none;">
+                        <thead>
+                            <tr>
+                                <th>排名</th>
+                                <th>球员</th>
+                                <th>背号</th>
+                                <th>位置</th>
+                                <th>局数</th>
+                                <th>被打安打</th>
+                                <th>自责分</th>
+                                <th>保送</th>
+                                <th>三振</th>
+                                <th>被打本垒打</th>
+                                <th id="pitchingHighlightCol" class="text-arena-red">防御率</th>
+                                <th>WHIP</th>
+                            </tr>
+                        </thead>
+                        <tbody id="pitchingBody"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Top 3 Podium -->
+            <div class="mecha-card p-6 md:p-8 mb-10" id="podiumCard" style="display:none;">
+                <h3 class="font-heading text-xl font-bold text-white mb-8 flex items-center gap-2">
+                    <svg class="w-5 h-5 text-arena-red" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"/>
+                    </svg>
+                    <span id="podiumTitle">TOP 3</span>
+                </h3>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6" id="podiumGrid"></div>
+            </div>
+
+        </div>
+
+    </div>
+
+    <script>
+        // Mobile Menu
+        const menuBtn = document.getElementById('mobile-menu-btn');
+        const mobileMenu = document.getElementById('mobile-menu');
+        const iconOpen = document.getElementById('menu-icon-open');
+        const iconClose = document.getElementById('menu-icon-close');
+
+        menuBtn.addEventListener('click', () => {
+            const isOpen = !mobileMenu.classList.contains('hidden');
+            mobileMenu.classList.toggle('hidden');
+            iconOpen.classList.toggle('hidden');
+            iconClose.classList.toggle('hidden');
+            menuBtn.setAttribute('aria-expanded', !isOpen);
+        });
+
+        // Data & State
+        let allPlayers = [];
+        let currentSort = 'batting_average';
+
+        // 打击数据配置
+        const battingConfig = {
+            batting_average:    { label: '打击率排行榜', col: '打击率',  key: 'batting_average',   fmt: v => v.toFixed(3), cls: v => v >= 0.3 ? 'text-green-400' : v >= 0.25 ? 'text-yellow-400' : 'text-gray-300' },
+            on_base_percentage: { label: '上垒率排行榜', col: '上垒率',  key: 'on_base_percentage', fmt: v => v.toFixed(3), cls: v => v >= 0.4 ? 'text-green-400' : v >= 0.35 ? 'text-yellow-400' : 'text-gray-300' },
+            ops:                { label: 'OPS排行榜',    col: 'OPS',     key: 'ops',               fmt: v => v.toFixed(3), cls: v => v >= 0.8 ? 'text-green-400' : v >= 0.7 ? 'text-yellow-400' : 'text-gray-300' },
+            at_bats:            { label: '打数排行榜',   col: '打数',    key: 'at_bats',           fmt: v => v.toString(), cls: () => 'text-white' },
+            hits:               { label: '安打排行榜',   col: '安打',    key: 'hits',              fmt: v => v.toString(), cls: () => 'text-white' },
+            rbi:                { label: '打点排行榜',   col: '打点',    key: 'rbi',               fmt: v => v.toString(), cls: () => 'text-arena-red' },
+            runs:               { label: '得分排行榜',   col: '得分',    key: 'runs',              fmt: v => v.toString(), cls: () => 'text-white' },
+            home_runs:          { label: '本垒打排行榜', col: '本垒打',  key: 'home_runs',         fmt: v => v.toString(), cls: () => 'text-arena-red' },
+            stolen_bases:       { label: '偷垒排行榜',   col: '偷垒',    key: 'stolen_bases',      fmt: v => v.toString(), cls: () => 'text-green-400' },
+            strikeouts:         { label: '三振排行榜',   col: '三振',    key: 'strikeouts',        fmt: v => v.toString(), cls: () => 'text-yellow-400' },
+            walks:              { label: '保送排行榜',   col: '保送',    key: 'walks',             fmt: v => v.toString(), cls: () => 'text-green-400' },
+        };
+
+        // 投手数据配置
+        const pitchingConfig = {
+            era:                { label: '防御率排行榜', col: '防御率',  key: 'era',                fmt: v => v.toFixed(2), cls: v => v > 0 && v <= 2 ? 'text-green-400' : v <= 4 ? 'text-yellow-400' : 'text-gray-300', lower: true, minInnings: true },
+            pitcher_strikeouts: { label: '投手三振排行榜', col: '三振',   key: 'pitcher_strikeouts', fmt: v => v.toString(),  cls: () => 'text-green-400', minInnings: true },
+            innings_pitched:    { label: '投球局数排行榜', col: '局数',   key: 'innings_pitched',    fmt: v => v.toFixed(1),  cls: () => 'text-white', minInnings: false },
+            pitcher_walks:      { label: '投手保送排行榜', col: '保送',   key: 'pitcher_walks',      fmt: v => v.toString(),  cls: () => 'text-yellow-400', minInnings: true },
+            whip:               { label: 'WHIP排行榜',   col: 'WHIP',    key: 'whip',              fmt: v => v.toFixed(2), cls: v => v > 0 && v <= 1.2 ? 'text-green-400' : v <= 1.4 ? 'text-yellow-400' : 'text-gray-300', lower: true, minInnings: true },
+            hits_allowed:       { label: '被打安打排行榜', col: '被打安打', key: 'hits_allowed',    fmt: v => v.toString(),  cls: () => 'text-yellow-400', minInnings: true },
+            earned_runs:        { label: '自责分排行榜',  col: '自责分',  key: 'earned_runs',        fmt: v => v.toString(),  cls: () => 'text-yellow-400', minInnings: true },
+        };
+
+        const allConfig = { ...battingConfig, ...pitchingConfig };
+
+        // Load data
+        async function loadData() {
+            try {
+                const res = await fetch('/api/players');
+                allPlayers = await res.json();
+                renderLeaderboard();
+            } catch (e) {
+                console.error('加载数据失败:', e);
+                document.getElementById('leaderboardBody').innerHTML = '<tr><td colspan="12" class="text-center text-red-400 py-8">加载数据失败，请刷新页面重试</td></tr>';
+            }
+        }
+
+        function switchTab(sortKey) {
+            currentSort = sortKey;
+
+            // Update all tab buttons
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.sort === sortKey);
+                btn.classList.toggle('text-white', btn.dataset.sort === sortKey);
+                btn.classList.toggle('text-gray-400', btn.dataset.sort !== sortKey);
+            });
+
+            renderLeaderboard();
+        }
+
+        function isPitchingSort(key) {
+            return key in pitchingConfig;
+        }
+
+        function renderLeaderboard() {
+            const cfg = allConfig[currentSort];
+            const isPitching = isPitchingSort(currentSort);
+
+            // Toggle tables
+            document.getElementById('battingTable').style.display = isPitching ? 'none' : 'table';
+            document.getElementById('pitchingTable').style.display = isPitching ? 'table' : 'none';
+
+            // Toggle filter
+            document.getElementById('filterControl').innerHTML = isPitching
+                ? `<label class="text-gray-500 text-sm">最低局数:</label>
+                   <select class="bg-arena-surface border border-arena-red/20 text-white px-3 py-1.5 text-sm" id="minInningsFilter" onchange="renderLeaderboard()">
+                       <option value="0">全部</option>
+                       <option value="1" selected>>= 1局</option>
+                       <option value="3">>= 3局</option>
+                       <option value="5">>= 5局</option>
+                   </select>`
+                : `<label class="text-gray-500 text-sm">最低打数:</label>
+                   <select class="bg-arena-surface border border-arena-red/20 text-white px-3 py-1.5 text-sm" id="minAbFilter" onchange="renderLeaderboard()">
+                       <option value="0">全部</option>
+                       <option value="5" selected>>= 5</option>
+                       <option value="10">>= 10</option>
+                       <option value="20">>= 20</option>
+                   </select>`;
+
+            document.getElementById('leaderboardTitle').textContent = cfg.label;
+            document.getElementById('podiumTitle').textContent = cfg.label.replace('排行榜', '') + ' TOP 3';
+
+            // Update highlight column header
+            if (isPitching) {
+                document.getElementById('pitchingHighlightCol').textContent = cfg.col;
+            } else {
+                document.getElementById('highlightCol').textContent = cfg.col;
+            }
+
+            // Filter & sort
+            if (isPitching) {
+                renderPitchingLeaderboard(cfg);
+            } else {
+                renderBattingLeaderboard(cfg);
+            }
+        }
+
+        function renderBattingLeaderboard(cfg) {
+            const minAb = parseInt(document.getElementById('minAbFilter')?.value) || 0;
+
+            let players = allPlayers
+                .filter(p => (p.at_bats_total || 0) >= minAb)
+                .map(p => ({
+                    name: p.name,
+                    jersey_number: p.jersey_number,
+                    position: p.primary_position || '未指定',
+                    at_bats: p.at_bats_total || 0,
+                    hits: p.hits_total || 0,
+                    runs: p.runs_total || 0,
+                    rbi: p.rbi_total || 0,
+                    walks: p.walks_total || 0,
+                    strikeouts: p.strikeouts_batting_total || 0,
+                    home_runs: p.home_runs_batting || 0,
+                    stolen_bases: p.stolen_bases || 0,
+                    batting_average: p.batting_average || 0,
+                    on_base_percentage: p.on_base_percentage || 0,
+                    ops: p.ops || 0,
+                    highlight: cfg.key === 'batting_average' ? (p.batting_average || 0) :
+                               cfg.key === 'on_base_percentage' ? (p.on_base_percentage || 0) :
+                               cfg.key === 'ops' ? (p.ops || 0) :
+                               cfg.key === 'at_bats' ? (p.at_bats_total || 0) :
+                               cfg.key === 'hits' ? (p.hits_total || 0) :
+                               cfg.key === 'rbi' ? (p.rbi_total || 0) :
+                               cfg.key === 'runs' ? (p.runs_total || 0) :
+                               cfg.key === 'home_runs' ? (p.home_runs_batting || 0) :
+                               cfg.key === 'stolen_bases' ? (p.stolen_bases || 0) :
+                               cfg.key === 'strikeouts' ? (p.strikeouts_batting_total || 0) :
+                               cfg.key === 'walks' ? (p.walks_total || 0) : 0
+                }));
+
+            players.sort((a, b) => b.highlight - a.highlight);
+
+            const tbody = document.getElementById('leaderboardBody');
+            tbody.innerHTML = '';
+
+            if (players.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="12" class="text-center text-gray-500 py-8">暂无符合条件的数据</td></tr>';
+                document.getElementById('podiumCard').style.display = 'none';
+                return;
+            }
+
+            const maxHighlight = players[0].highlight || 1;
+
+            players.forEach((p, i) => {
+                const rank = i + 1;
+                const rankClass = rank === 1 ? 'rank-1' : rank === 2 ? 'rank-2' : rank === 3 ? 'rank-3' : 'rank-other';
+                const valueClass = cfg.cls(p.highlight);
+                const barWidth = Math.max(5, (p.highlight / maxHighlight) * 100);
+
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td><span class="rank-badge ${rankClass}">${rank}</span></td>
+                    <td><span class="font-semibold text-white">${p.name}</span></td>
+                    <td class="text-gray-400">#${p.jersey_number}</td>
+                    <td class="text-gray-400">${p.position}</td>
+                    <td>${p.at_bats}</td>
+                    <td>${p.hits}</td>
+                    <td>${p.runs}</td>
+                    <td>${p.rbi}</td>
+                    <td>${p.walks}</td>
+                    <td>${p.strikeouts}</td>
+                    <td>
+                        <span class="font-bold ${valueClass}">${cfg.fmt(p.highlight)}</span>
+                        <div class="stat-bar mt-1"><div class="stat-bar-fill" style="width: ${barWidth}%"></div></div>
+                    </td>
+                    <td>${p.batting_average.toFixed(3)}</td>
+                    <td>${p.on_base_percentage.toFixed(3)}</td>
+                `;
+                tbody.appendChild(row);
+            });
+
+            renderPodium(players.slice(0, 3), cfg, false);
+        }
+
+        function renderPitchingLeaderboard(cfg) {
+            const minInnings = parseFloat(document.getElementById('minInningsFilter')?.value) || 0;
+
+            let pitchers = allPlayers
+                .filter(p => p.is_pitcher || p.pitcher_profile)
+                .filter(p => (p.innings_pitched_total || 0) >= minInnings)
+                .map(p => ({
+                    name: p.name,
+                    jersey_number: p.jersey_number,
+                    position: p.primary_position || '投手',
+                    innings_pitched: p.innings_pitched_total || 0,
+                    hits_allowed: p.hits_allowed_total || 0,
+                    runs_allowed: p.runs_allowed_total || 0,
+                    earned_runs: p.earned_runs_total || 0,
+                    pitcher_walks: p.walks_allowed_total || 0,
+                    pitcher_strikeouts: p.strikeouts_total || 0,
+                    home_runs_allowed: p.home_runs_allowed_total || 0,
+                    era: p.era || 0,
+                    whip: p.whip || 0,
+                    highlight: cfg.key === 'era' ? (p.era || 0) :
+                               cfg.key === 'pitcher_strikeouts' ? (p.strikeouts_total || 0) :
+                               cfg.key === 'innings_pitched' ? (p.innings_pitched_total || 0) :
+                               cfg.key === 'pitcher_walks' ? (p.walks_allowed_total || 0) :
+                               cfg.key === 'whip' ? (p.whip || 0) :
+                               cfg.key === 'hits_allowed' ? (p.hits_allowed_total || 0) :
+                               cfg.key === 'earned_runs' ? (p.earned_runs_total || 0) : 0
+                }));
+
+            // 对于防御率和WHIP，数值越低越好，但排行榜我们按数值排序显示
+            if (cfg.lower) {
+                // 过滤掉0值（没投过的），然后排序
+                pitchers = pitchers.filter(p => p.highlight > 0 || cfg.key === 'era' || cfg.key === 'whip');
+                pitchers.sort((a, b) => a.highlight - b.highlight);
+            } else {
+                pitchers.sort((a, b) => b.highlight - a.highlight);
+            }
+
+            const tbody = document.getElementById('pitchingBody');
+            tbody.innerHTML = '';
+
+            if (pitchers.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="12" class="text-center text-gray-500 py-8">暂无符合条件的数据</td></tr>';
+                document.getElementById('podiumCard').style.display = 'none';
+                return;
+            }
+
+            const maxHighlight = Math.max(...pitchers.map(p => p.highlight), 1);
+
+            pitchers.forEach((p, i) => {
+                const rank = i + 1;
+                const rankClass = rank === 1 ? 'rank-1' : rank === 2 ? 'rank-2' : rank === 3 ? 'rank-3' : 'rank-other';
+                const valueClass = cfg.cls(p.highlight);
+                const barWidth = cfg.lower
+                    ? Math.max(5, (1 - p.highlight / maxHighlight) * 100)
+                    : Math.max(5, (p.highlight / maxHighlight) * 100);
+
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td><span class="rank-badge ${rankClass}">${rank}</span></td>
+                    <td><span class="font-semibold text-white">${p.name}</span></td>
+                    <td class="text-gray-400">#${p.jersey_number}</td>
+                    <td class="text-gray-400">${p.position}</td>
+                    <td>${p.innings_pitched.toFixed(1)}</td>
+                    <td>${p.hits_allowed}</td>
+                    <td>${p.earned_runs}</td>
+                    <td>${p.pitcher_walks}</td>
+                    <td>${p.pitcher_strikeouts}</td>
+                    <td>${p.home_runs_allowed}</td>
+                    <td>
+                        <span class="font-bold ${valueClass}">${cfg.fmt(p.highlight)}</span>
+                        <div class="stat-bar mt-1"><div class="stat-bar-fill" style="width: ${barWidth}%"></div></div>
+                    </td>
+                    <td>${p.whip.toFixed(2)}</td>
+                `;
+                tbody.appendChild(row);
+            });
+
+            renderPodium(pitchers.slice(0, 3), cfg, true);
+        }
+
+        function renderPodium(top3, cfg, isPitching) {
+            const card = document.getElementById('podiumCard');
+            const grid = document.getElementById('podiumGrid');
+
+            if (top3.length < 1) {
+                card.style.display = 'none';
+                return;
+            }
+
+            card.style.display = 'block';
+            grid.innerHTML = '';
+
+            const order = top3.length >= 3 ? [top3[1], top3[0], top3[2]] : top3;
+            const heights = top3.length >= 3 ? ['h-32', 'h-44', 'h-28'] : ['h-44'];
+            const medals = ['2nd', '1st', '3rd'];
+            const medalColors = [
+                'from-gray-400 to-gray-600',
+                'from-yellow-400 to-yellow-600',
+                'from-amber-600 to-amber-800'
+            ];
+
+            order.forEach((p, i) => {
+                const realRank = top3.length >= 3 ? [2, 1, 3][i] : 1;
+                const div = document.createElement('div');
+                div.className = 'text-center';
+                div.innerHTML = `
+                    <div class="mb-4">
+                        <div class="w-16 h-16 mx-auto rounded-full bg-gradient-to-br ${medalColors[i]} flex items-center justify-center mb-3">
+                            <span class="font-heading text-2xl font-black text-black">${realRank}</span>
+                        </div>
+                        <p class="font-heading text-xl font-bold text-white">${p.name}</p>
+                        <p class="text-gray-500 text-sm">#${p.jersey_number} | ${p.position}</p>
+                    </div>
+                    <div class="bg-arena-surface/50 p-4" style="clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px)); border: 1px solid rgba(230,0,0,0.15);">
+                        <p class="text-gray-500 text-xs uppercase tracking-wider mb-1">${cfg.col}</p>
+                        <p class="font-heading text-3xl font-black text-arena-red">${cfg.fmt(p.highlight)}</p>
+                        <div class="grid grid-cols-3 gap-2 mt-3 text-xs text-gray-400">
+                            ${isPitching
+                                ? `<div>IP: ${p.innings_pitched.toFixed(1)}</div><div>SO: ${p.pitcher_strikeouts}</div><div>ER: ${p.earned_runs}</div>`
+                                : `<div>AB: ${p.at_bats}</div><div>H: ${p.hits}</div><div>RBI: ${p.rbi}</div>`}
+                        </div>
+                    </div>
+                `;
+                grid.appendChild(div);
+            });
+        }
+
+        // Init
+        document.addEventListener('DOMContentLoaded', loadData);
+    </script>
+</body>
+</html>
