@@ -1,345 +1,288 @@
-# 棒球队管理系统
+# POWER ARENA - 棒球队管理系统
 
-一个基于 Flask 的棒球队管理系统，用于管理球员资料、单场比赛记录、累计打击/投球统计、对局查询，以及历年比赛 PDF 数据导入。
+一个基于 Flask 的现代化棒球队管理系统，采用竞技风 UI 设计，支持球员管理、比赛记录、统计分析、PDF 导入等功能。
 
-当前版本已经完成一轮比较重要的底层整理：
+## 功能特性
 
-- 数据库统一为 SQLite
-- 球员基础信息、打击汇总、投球汇总拆分存储
-- 支持多守位
-- `is_pitcher` 改为独立业务标记，而不是和野手互斥的身份
+### 核心功能
+- **球员管理**：添加、编辑、删除球员信息，支持多守备位置
+- **比赛记录**：录入单场打击/投球数据，自动累计统计
+- **对局查询**：按球员、对手或组合筛选历史对战数据
+- **数据可视化**：打击率、防御率等统计图表
+- **PDF 导入**：自动解析比赛 PDF 并导入数据
+- **数据导出**：支持导出 CSV 文件
 
-## 当前版本重点
-
-- 球员可以拥有多个守备位置
-- 如果球员勾选“是否为投手”，系统会自动把 `投手` 加入守备位置
-- 投手仍然可以同时选择 `捕手 / 内野 / 外野` 等其他位置
-- 投手的主位置不必固定为 `投手`
-- 每个球员都保留打击档案
-- 只有可投球球员才有投手档案
-- 投手可以录入打击记录
-- 对局信息统计支持：
-  - 只按球员查询
-  - 只按对手查询
-  - 同时按球员 + 对手查询
-- 对局信息页面会分开展示打击记录和投球记录
-- 没有实际录入内容的空记录不会在对局统计中展示
-- 添加比赛记录时，“对手球队”可以直接复用历史对手列表，也可以手动输入新对手
+### 技术亮点
+- 竞技风格 UI（深色主题 + 红色强调色）
+- 响应式设计，支持移动端
+- SQLite 数据库，无需额外配置
+- Docker 容器化部署支持
 
 ## 技术栈
 
-- 后端：Flask
-- ORM：Flask-SQLAlchemy
-- 数据迁移辅助：Flask-Migrate
-- 数据库：SQLite
-- 数据分析：pandas
-- 图表：matplotlib / seaborn / plotly
-- PDF 解析：pdfplumber
-- 前端：Bootstrap 5 + 原生 JavaScript + jQuery + DataTables
+| 层级 | 技术 |
+|------|------|
+| 后端 | Flask 2.3.3 |
+| ORM | Flask-SQLAlchemy 3.0.5 |
+| 数据迁移 | Flask-Migrate 4.1.0 |
+| 数据库 | SQLite |
+| 数据分析 | pandas 2.2.3 |
+| 图表 | matplotlib 3.9.2 / seaborn 0.13.2 / plotly 5.24.1 |
+| PDF 解析 | pdfplumber 0.11.4 |
+| 前端 | Bootstrap 5 + 原生 JavaScript + jQuery + DataTables |
+| 样式 | Tailwind CSS CDN |
 
 ## 数据结构
 
 ### 核心表
 
-- `players`
-  - 球员主档案
-  - 保存姓名、背号、主位置、是否为投手等基础信息
-- `positions`
-  - 守备位置字典表
-- `player_positions`
-  - 球员和守备位置的多对多关系
-- `fielder_profiles`
-  - 打击与守备汇总
-- `pitcher_profiles`
-  - 投球汇总
-- `game_records`
-  - 单场原始比赛记录
+| 表名 | 说明 |
+|------|------|
+| `players` | 球员主档案（姓名、背号、主位置、是否投手） |
+| `positions` | 守备位置字典表 |
+| `player_positions` | 球员-位置多对多关系 |
+| `fielder_profiles` | 打击与守备汇总统计 |
+| `pitcher_profiles` | 投球汇总统计 |
+| `game_records` | 单场比赛原始记录 |
 
-### 当前业务规则
+### 业务规则
 
-- `is_pitcher` 表示“这个球员可以投球”
-- `is_pitcher = true` 时：
-  - 球员会自动拥有 `投手` 位置
-  - 仍然可以同时拥有其他守备位置
-  - 主位置可以是 `投手`，也可以是其他已选位置
-- `is_pitcher = false` 时：
-  - 系统会自动移除 `投手` 位置
-- 每个球员都会保留 `fielder_profile`
-- 系统会根据 `is_pitcher` 在投球统计场景中使用 `pitcher_profile`
-- 单场记录写入 `game_records` 后，会同步更新汇总档案
+- `is_pitcher = true` 时自动拥有「投手」位置，仍可兼守其他位置
+- 每个球员都有 `fielder_profile`，投手额外拥有 `pitcher_profile`
+- 比赛记录写入后自动同步更新汇总档案
 
 ## 页面入口
 
-- `/`
-  - 首页
-- `/players`
-  - 球员列表
-- `/add_player`
-  - 添加球员
-- `/game_stats`
-  - 比赛数据总览
-- `/add_game_record`
-  - 添加比赛记录
-- `/stats`
-  - 综合统计与图表
-- `/matchup_stats`
-  - 对局信息统计
-- `/pdf_viewer`
-  - 历年比赛 PDF 查看
-- `/import_pdf`
-  - PDF 批量导入
+| 路径 | 功能 |
+|------|------|
+| `/` | 首页 - 数据总览与快捷入口 |
+| `/players` | 球员列表 |
+| `/add_player` | 添加球员 |
+| `/game_stats` | 比赛数据总览 |
+| `/add_game_record` | 添加比赛记录 |
+| `/stats` | 综合统计与图表 |
+| `/matchup_stats` | 对局信息统计 |
+| `/pdf_viewer` | 历年比赛 PDF 查看 |
+| `/upload_pdf` | 上传 PDF 导入比赛数据 |
 
-## 常用 API
+## API 接口
 
 ### 球员
 
-- `GET /api/players`
-- `POST /api/players`
-- `PUT /api/players/<player_id>`
-- `DELETE /api/players/<player_id>`
-- `GET /api/players/batters`
-- `GET /api/players/pitchers`
+```
+GET    /api/players              # 获取所有球员
+POST   /api/players              # 添加球员
+GET    /api/players/<id>         # 获取单个球员
+PUT    /api/players/<id>         # 更新球员
+DELETE /api/players/<id>         # 删除球员
+GET    /api/players/batters      # 获取打击球员列表
+GET    /api/players/pitchers     # 获取投手列表
+```
 
 ### 比赛记录
 
-- `POST /api/game_records`
+```
+POST   /api/game_records         # 添加比赛记录
+```
 
 ### 统计
 
-- `GET /api/stats/batting`
-- `GET /api/stats/pitching`
-- `GET /api/stats/visualization`
-- `GET /api/stats/batting_leaderboard`
-- `GET /api/stats/pitching_leaderboard`
-- `GET /api/visualization/batting`
-- `GET /api/visualization/pitching`
-- `GET /api/export/csv`
+```
+GET    /api/stats/batting              # 打击统计
+GET    /api/stats/pitching             # 投球统计
+GET    /api/stats/visualization        # 可视化图表
+GET    /api/stats/batting_leaderboard  # 打击排行榜
+GET    /api/stats/pitching_leaderboard # 投手排行榜
+GET    /api/visualization/batting      # 打击可视化
+GET    /api/visualization/pitching     # 投球可视化
+GET    /api/export/csv                 # 导出 CSV
+```
 
 ### 对局信息
 
-- `GET /api/matchup/opponents`
-- `GET /api/matchup/search_records`
-- `GET /api/matchup/all_game_records`
-- `DELETE /api/matchup/game_record/<record_id>`
-
-说明：
-
-- `search_records` 是当前推荐使用的对局查询接口
-- 旧的 `player_vs_opponent`、`player_game_records` 仍保留，主要用于兼容旧逻辑
+```
+GET    /api/matchup/opponents           # 获取所有对手列表
+GET    /api/matchup/search_records      # 按条件查询比赛记录
+GET    /api/matchup/all_game_records    # 获取全队所有比赛记录
+DELETE /api/matchup/game_record/<id>    # 删除比赛记录
+```
 
 ### PDF
 
-- `GET /api/pdf/files`
-- `GET /api/pdf/view/<path:filepath>`
-- `GET /api/pdf/parse/<path:filepath>`
-- `POST /api/pdf/import_all`
-- `POST /api/pdf/import_one`
+```
+GET  /api/pdf/files           # 获取 PDF 文件列表
+GET  /api/pdf/view/<path>     # 查看 PDF 内容
+GET  /api/pdf/parse/<path>    # 解析 PDF（预览）
+POST /api/pdf/import_all      # 批量导入所有 PDF
+POST /api/pdf/import_one      # 导入单个 PDF
+POST /api/pdf/upload          # 上传并解析 PDF
+POST /api/pdf/confirm_import  # 确认导入已解析的数据
+```
 
 ## 环境要求
-
-建议环境：
 
 - Python 3.11 或 3.12
 - pip
 
-说明：
+## 快速开始
 
-- 运行 Flask 项目主要依赖 Python
-
-## 安装步骤
-
-### 1. 进入项目目录
+### 1. 克隆项目
 
 ```bash
-cd 文件夹目录
+git clone https://github.com/your-username/baseball-team-management.git
+cd baseball-team-management
 ```
 
-### 2. 安装 Python 依赖
+### 2. 安装依赖
 
 ```bash
 pip install -r requirements.txt
 ```
 
-## 启动项目
-
-### 1. 启动 Flask
-
-直接启动即可，程序会自动创建缺失的数据表和位置字典：
+### 3. 启动服务
 
 ```bash
 python app.py
 ```
 
-默认地址：
+启动后访问：http://127.0.0.1:5000
 
-```text
-http://127.0.0.1:5000
-```
+数据库文件将自动创建在 `instance/baseball_players.db`。
 
-默认数据库文件位于：
-
-- `instance/baseball_players.db`
-
-### 2. 初始化带示例数据的数据库
-
-如果你希望额外写入一批示例球员数据，可以执行：
+### 4. 初始化示例数据（可选）
 
 ```bash
 python init_db.py
 ```
 
-说明：
+## Docker 部署
 
-- `app.py` 本身就会自动建表
-- `init_db.py` 适合“新建数据库 + 初始化位置 + 添加示例数据”的场景
-
-## 旧数据库迁移
-
-如果你的项目里已经存在旧版本数据库，并且旧数据主要写在 `players` 大表中，可以执行：
+### 使用 Docker Compose
 
 ```bash
-python migrate_profiles_sqlite.py
+docker-compose up -d
 ```
 
-这个脚本会：
-
-- 自动备份原数据库
-- 创建 `fielder_profiles` / `pitcher_profiles`
-- 尝试把旧累计统计迁移到新档案表
-- 规范球员角色和位置信息
-
-备份文件会保存在 `instance/` 目录下，文件名类似：
-
-```text
-baseball_players.backup_YYYYMMDD_HHMMSS.db
-```
-
-## PDF 导入
-
-### Web 页面方式
-
-打开：
-
-```text
-http://127.0.0.1:5000/import_pdf
-```
-
-支持：
-
-- 预览 PDF 解析结果
-- 导入单个 PDF
-- 批量导入全部 PDF
-
-### 命令行方式
-
-预览：
+### 手动构建
 
 ```bash
-python import_pdfs.py --dry-run
+docker build -t baseball-app .
+docker run -d -p 5000:5000 -v ./instance:/app/instance -v ./data:/app/data baseball-app
 ```
 
-实际导入：
+## 目录结构
 
-```bash
-python import_pdfs.py
+```
+baseball-team-management/
+├── app.py                    # Flask 主入口
+├── database.py               # 数据模型
+├── pdf_parser.py             # PDF 解析模块
+├── import_pdfs.py            # PDF 批量导入脚本
+├── init_db.py                # 初始化数据库（含示例数据）
+├── migrate_profiles_sqlite.py # 旧数据库迁移脚本
+├── sync_data.py              # 数据同步工具
+├── requirements.txt          # Python 依赖
+├── Dockerfile                # Docker 构建文件
+├── docker-compose.yml        # Docker Compose 配置
+├── templates/                # HTML 模板
+│   ├── index.html            # 首页
+│   ├── players.html          # 球员列表
+│   ├── add_player.html       # 添加球员
+│   ├── game_stats.html       # 比赛数据
+│   ├── add_game_record.html  # 添加比赛记录
+│   ├── stats.html            # 统计图表
+│   ├── matchup_stats.html    # 对局信息
+│   └── ...
+├── static/                   # 静态资源
+│   ├── css/
+│   └── js/
+├── data/                     # PDF 数据文件目录
+│   ├── 2023/
+│   ├── 2024/
+│   └── 2025/
+└── instance/                 # 数据库文件目录
+    └── baseball_players.db
 ```
 
-## 目录说明
+## 使用说明
 
-```text
-baseball-player-manager/
-├── app.py
-├── database.py
-├── init_db.py
-├── migrate_profiles_sqlite.py
-├── import_pdfs.py
-├── pdf_parser.py
-├── cleanup_db.py
-├── requirements.txt
-├── README.md
-├── templates/
-├── static/
-├── data/
-└── instance/
-```
+### 添加球员
 
-### 关键文件
+- 可多选守备位置
+- 勾选「是否为投手」自动添加投手位置
+- 投手可同时选择其他守位
+- 主位置必须在已选位置中
 
-- `app.py`
-  - Flask 主入口和主要 API
-- `database.py`
-  - SQLAlchemy 数据模型与兼容迁移逻辑
-- `migrate_profiles_sqlite.py`
-  - 旧数据库迁移脚本
-- `templates/add_player.html`
-  - 添加球员页面
-- `templates/add_game_record.html`
-  - 添加比赛记录页面
-- `templates/matchup_stats.html`
-  - 对局信息页面
-- `static/js/script.js`
-  - 球员管理前端逻辑
-- `static/js/game_record.js`
-  - 比赛记录前端逻辑
-- `static/js/matchup_stats.js`
-  - 对局统计前端逻辑
-
-## 当前版本的几个使用说明
-
-### 1. 添加球员
-
-- 可以多选守备位置
-- 如果勾选“是否为投手”，系统会自动补上 `投手`
-- 投手仍然可以继续选择其他守位
-- 主位置必须在已选位置里
-
-### 2. 添加比赛记录
+### 添加比赛记录
 
 - 非投手只能录入打击记录
-- 可投球球员可以录入打击记录，也可以录入投球记录
-- 对手字段支持选择历史对手，也支持直接输入新对手
+- 投手可录入打击或投球记录
+- 对手支持选择历史对手或手动输入
 
-### 3. 对局信息统计
+### 对局信息统计
 
-- 可以只按球员查询
-- 可以只按对手查询
-- 可以同时按球员和对手查询
-- 查询结果会分成：
-  - 打击记录
-  - 投球记录
-- 没有实际数据的空记录不会展示
-- 进入筛选结果后，全队记录区域会自动隐藏，避免混淆
+- 支持按球员、对手或组合筛选
+- 结果分开展示打击记录和投球记录
+- 空记录自动隐藏
 
-## 可能会用到的维护命令
+### PDF 导入
 
-重建数据库：
+1. 将 PDF 文件放入 `data/` 目录（按年份分子目录）
+2. 访问 `/upload_pdf` 上传或选择已有 PDF
+3. 预览解析结果后确认导入
+
+PDF 文件命名格式建议：`队伍A_vs_队伍B_月_日_年.pdf`
+
+例如：`北京工业大学_vs_北京交通大学_Nov_16_2024.pdf`
+
+## 安全注意事项
+
+⚠️ **部署到公网前请修改以下配置：**
+
+1. **SECRET_KEY**：`app.py` 第 63 行的 `'your-secret-key-here'` 需要更换为随机强密钥
+   ```python
+   # 生成随机密钥
+   import secrets
+   app.config['SECRET_KEY'] = secrets.token_hex(32)
+   ```
+
+2. **关闭 Debug 模式**：生产环境设置 `debug=False`
+   ```python
+   app.run(debug=False, host='0.0.0.0', port=5000)
+   ```
+
+3. **数据库文件**：`instance/` 目录已加入 `.gitignore`，确保敏感数据不被提交
+
+## 公网部署功能影响
+
+将此项目部署到公网 GitHub 后，以下功能可能受影响：
+
+| 功能 | 影响 | 说明 |
+|------|------|------|
+| 本地 PDF 文件访问 | ❌ 不可用 | `data/` 目录中的本地 PDF 文件不会提交到仓库 |
+| 本地数据库 | ❌ 不会同步 | `instance/` 目录被 .gitignore 排除，数据库需重新初始化 |
+| PDF 上传功能 | ✅ 可用 | 上传的文件保存到 `data/uploads/`，需要持久化存储 |
+| 其他所有功能 | ✅ 完全可用 | 球员管理、比赛录入、统计图表等均正常 |
+
+**建议**：公网部署时使用 Docker 并挂载 volume 持久化数据库：
 
 ```bash
-python init_db.py
+docker run -d \
+  -p 5000:5000 \
+  -v ./instance:/app/instance \
+  -v ./data:/app/data \
+  baseball-app
 ```
 
-迁移旧数据：
+## 后续优化方向
 
-```bash
-python migrate_profiles_sqlite.py
-```
+- [ ] 用户登录与权限管理
+- [ ] Flask 蓝图拆分重构
+- [ ] 比赛记录编辑功能
+- [ ] 对局信息日期范围筛选
+- [ ] 自动备份与导入日志
+- [ ] 单元测试覆盖
 
-检查 Python 语法：
+## 许可证
 
-```bash
-python -m py_compile app.py database.py
-```
-
-## 后续可继续优化的方向
-
-- 把 Flask 接口进一步拆成更清晰的服务层
-- 给比赛记录增加编辑功能
-- 给对局信息增加日期范围筛选
-- 增加用户登录和权限管理
-- 增加自动备份和导入日志
-
-## 相关文件
-
-- `app.py`
-- `database.py`
-- `migrate_profiles_sqlite.py`
+MIT License
