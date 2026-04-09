@@ -7,16 +7,14 @@ WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV FLASK_APP=app.py
-ENV FLASK_ENV=development
-
-# 使用清华大学镜像源加速 pip
-RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
+ENV FLASK_ENV=production
 
 # 复制依赖文件
 COPY requirements.txt .
 
-# 安装 Python 依赖
-RUN pip install --no-cache-dir -r requirements.txt
+# 升级 pip 并安装 Python 依赖 (默认使用官方源，速度最快且不会超时)
+RUN pip install --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
 
 # 复制项目文件
 COPY . .
