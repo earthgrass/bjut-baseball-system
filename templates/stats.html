@@ -317,6 +317,7 @@
                         <a href="/add_game_record" class="nav-link px-4 py-2 text-gray-300 font-semibold text-sm hover:text-white transition-colors duration-200">录入记录</a>
                         <a href="/stats" class="nav-link active px-4 py-2 text-arena-red font-semibold text-sm hover:text-white transition-colors duration-200">数据统计</a>
                         <a href="/matchup_stats" class="nav-link px-4 py-2 text-gray-300 font-semibold text-sm hover:text-white transition-colors duration-200">对局信息</a>
+                        <a href="/pdf_viewer" class="nav-link px-4 py-2 text-gray-300 font-semibold text-sm hover:text-white transition-colors duration-200">历年PDF</a>
                         <a href="/upload_pdf" class="nav-link px-4 py-2 text-gray-300 font-semibold text-sm hover:text-white transition-colors duration-200">上传PDF</a>
                     </div>
 
@@ -338,6 +339,7 @@
                     <a href="/add_game_record" class="block px-4 py-3 text-gray-300 font-semibold text-sm hover:text-white hover:bg-arena-red/10 transition-colors">录入记录</a>
                     <a href="/stats" class="block px-4 py-3 text-arena-red font-semibold text-sm bg-arena-red/10">数据统计</a>
                     <a href="/matchup_stats" class="block px-4 py-3 text-gray-300 font-semibold text-sm hover:text-white hover:bg-arena-red/10 transition-colors">对局信息</a>
+                    <a href="/pdf_viewer" class="block px-4 py-3 text-gray-300 font-semibold text-sm hover:text-white hover:bg-arena-red/10 transition-colors">历年PDF</a>
                     <a href="/upload_pdf" class="block px-4 py-3 text-gray-300 font-semibold text-sm hover:text-white hover:bg-arena-red/10 transition-colors">上传PDF</a>
                 </div>
             </div>
@@ -470,7 +472,7 @@
                                 <th>保送</th>
                                 <th>三振</th>
                                 <th id="highlightCol" class="text-arena-red">打击率</th>
-                                <th>上垒率</th>
+                                <th id="secondCol">上垒率</th>
                             </tr>
                         </thead>
                         <tbody id="leaderboardBody"></tbody>
@@ -622,6 +624,8 @@
                 document.getElementById('pitchingHighlightCol').textContent = cfg.col;
             } else {
                 document.getElementById('highlightCol').textContent = cfg.col;
+                // Update second column header - always show 上垒率
+                document.getElementById('secondCol').textContent = '上垒率';
             }
 
             // Filter & sort
@@ -700,13 +704,18 @@
                         <span class="font-bold ${valueClass}">${cfg.fmt(p.highlight)}</span>
                         <div class="stat-bar mt-1"><div class="stat-bar-fill" style="width: ${barWidth}%"></div></div>
                     </td>
-                    <td>${p.batting_average.toFixed(3)}</td>
-                    <td>${p.on_base_percentage.toFixed(3)}</td>
+                    <td><span class="${getObpClass(p.on_base_percentage)}">${p.on_base_percentage.toFixed(3)}</span></td>
                 `;
                 tbody.appendChild(row);
             });
 
             renderPodium(players.slice(0, 3), cfg, false);
+        }
+
+        function getObpClass(obp) {
+            if (obp >= 0.4) return 'text-green-400 font-bold';
+            if (obp >= 0.35) return 'text-yellow-400 font-bold';
+            return 'text-gray-300';
         }
 
         function renderPitchingLeaderboard(cfg) {

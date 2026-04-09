@@ -477,6 +477,7 @@
                         <a href="/add_game_record" class="nav-link px-4 py-2 text-gray-300 font-semibold text-sm hover:text-white transition-colors duration-200">录入记录</a>
                         <a href="/stats" class="nav-link px-4 py-2 text-gray-300 font-semibold text-sm hover:text-white transition-colors duration-200">数据统计</a>
                         <a href="/matchup_stats" class="nav-link px-4 py-2 text-gray-300 font-semibold text-sm hover:text-white transition-colors duration-200">对局信息</a>
+                        <a href="/pdf_viewer" class="nav-link px-4 py-2 text-gray-300 font-semibold text-sm hover:text-white transition-colors duration-200">历年PDF</a>
                         <a href="/upload_pdf" class="nav-link px-4 py-2 text-gray-300 font-semibold text-sm hover:text-white transition-colors duration-200">上传PDF</a>
                     </div>
 
@@ -500,6 +501,7 @@
                     <a href="/add_game_record" class="block px-4 py-3 text-gray-300 font-semibold text-sm hover:text-white hover:bg-arena-red/10 transition-colors">录入记录</a>
                     <a href="/stats" class="block px-4 py-3 text-gray-300 font-semibold text-sm hover:text-white hover:bg-arena-red/10 transition-colors">数据统计</a>
                     <a href="/matchup_stats" class="block px-4 py-3 text-gray-300 font-semibold text-sm hover:text-white hover:bg-arena-red/10 transition-colors">对局信息</a>
+                    <a href="/pdf_viewer" class="block px-4 py-3 text-gray-300 font-semibold text-sm hover:text-white hover:bg-arena-red/10 transition-colors">历年PDF</a>
                     <a href="/upload_pdf" class="block px-4 py-3 text-gray-300 font-semibold text-sm hover:text-white hover:bg-arena-red/10 transition-colors">上传PDF</a>
                 </div>
             </div>
@@ -736,7 +738,7 @@
                     </h2>
                 </div>
 
-                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 md:gap-7">
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6 md:gap-7">
                     <!-- Add Player -->
                     <a href="/add_player" class="mecha-card p-7 group">
                         <div class="corner-cut corner-tl"></div>
@@ -763,6 +765,20 @@
                         </div>
                         <h3 class="font-heading text-lg font-bold text-white mb-2">比赛记录</h3>
                         <p class="text-gray-500 text-sm">录入比赛数据</p>
+                    </a>
+
+                    <!-- PDF Viewer -->
+                    <a href="/pdf_viewer" class="mecha-card p-7 group">
+                        <div class="corner-cut corner-tl"></div>
+                        <div class="corner-cut corner-br"></div>
+                        <div class="energy-line"></div>
+                        <div class="w-14 h-14 rounded-full bg-arena-red/10 flex items-center justify-center mb-5 group-hover:bg-arena-red/25 transition-colors duration-300">
+                            <svg class="w-7 h-7 text-arena-red" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
+                            </svg>
+                        </div>
+                        <h3 class="font-heading text-lg font-bold text-white mb-2">历年PDF</h3>
+                        <p class="text-gray-500 text-sm">查看比赛记录</p>
                     </a>
 
                     <!-- PDF Upload -->

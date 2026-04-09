@@ -19,21 +19,24 @@ async function loadPDFFiles() {
         const response = await fetch('/api/pdf/files');
         pdfFiles = await response.json();
         currentDisplayedFiles = [...pdfFiles]; // 初始显示所有文件
-        
+
         console.log('加载的PDF文件列表:', pdfFiles);
-        
+
         // 更新文件总数
         document.getElementById('totalFilesCount').textContent = pdfFiles.length;
-        
+
         // 渲染文件列表
         renderFileList(currentDisplayedFiles);
-        
+
     } catch (error) {
         console.error('加载PDF文件列表失败:', error);
         showAlert('加载PDF文件列表失败', 'danger');
         document.getElementById('fileList').innerHTML = `
-            <div class="text-center text-danger py-4">
-                <i class="fas fa-exclamation-triangle me-2"></i>加载失败，请刷新页面重试
+            <div class="text-center py-8">
+                <svg class="w-8 h-8 mx-auto mb-2 text-red-500/60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z"/>
+                </svg>
+                <p class="text-red-400 text-sm">加载失败，请刷新页面重试</p>
             </div>
         `;
     }
@@ -42,52 +45,56 @@ async function loadPDFFiles() {
 // 渲染文件列表
 function renderFileList(files, isFiltered = false) {
     const fileList = document.getElementById('fileList');
-    
+
     if (!files || files.length === 0) {
         fileList.innerHTML = `
-            <div class="text-center text-muted py-4">
-                <i class="fas fa-folder-open me-2"></i>暂无PDF文件
+            <div class="text-center text-gray-500 py-8">
+                <svg class="w-8 h-8 mx-auto mb-2 text-arena-red/40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9a2 2 0 00-2 2v5a2 2 0 01-2 2z"/>
+                </svg>
+                暂无PDF文件
             </div>
         `;
         return;
     }
-    
+
     // 更新当前显示的文件列表
     if (isFiltered) {
         currentDisplayedFiles = files;
     }
-    
+
     let html = '';
-    
+
     files.forEach((file, index) => {
-        // 从文件名中提取比赛信息
         const displayName = file.display_name || file.filename;
-        
+
         html += `
-            <div class="list-group-item file-list-item ${index === 0 ? 'active' : ''}" 
-                 data-filepath="${file.path}" 
+            <div class="file-item p-3 ${index === 0 ? 'active' : ''}"
+                 data-filepath="${file.path}"
                  onclick="selectPDFFileByPath('${file.path}')">
-                <div class="d-flex justify-content-between align-items-start">
-                    <div class="me-3">
-                        <div class="d-flex align-items-center mb-1">
-                            <i class="fas fa-file-pdf text-danger me-2"></i>
-                            <strong class="text-truncate" style="max-width: 200px;">${displayName}</strong>
+                <div class="flex items-center justify-between">
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center mb-1">
+                            <svg class="w-4 h-4 text-arena-red flex-shrink-0 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
+                            </svg>
+                            <span class="text-white text-sm font-semibold truncate">${displayName}</span>
                         </div>
-                        <div class="d-flex align-items-center">
-                            <span class="badge year-badge bg-primary me-2">${file.year}年</span>
-                            <span class="file-size">${file.size}</span>
+                        <div class="flex items-center gap-2">
+                            <span class="text-arena-red text-xs font-bold">${file.year}年</span>
+                            <span class="text-gray-500 text-xs">${file.size}</span>
                         </div>
                     </div>
-                    <div>
-                        <i class="fas fa-chevron-right text-muted"></i>
-                    </div>
+                    <svg class="w-4 h-4 text-gray-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                    </svg>
                 </div>
             </div>
         `;
     });
-    
+
     fileList.innerHTML = html;
-    
+
     // 默认选择第一个文件
     if (files.length > 0) {
         selectPDFFileByPath(files[0].path);
@@ -102,14 +109,15 @@ async function selectPDFFileByPath(filePath) {
         console.error('未找到文件:', filePath);
         return;
     }
-    
+
     currentPDF = file;
-    
+
     // 更新活动状态
-    document.querySelectorAll('.file-list-item').forEach(item => {
+    document.querySelectorAll('.file-item').forEach(item => {
         item.classList.remove('active');
     });
-    document.querySelector(`.file-list-item[data-filepath="${filePath}"]`).classList.add('active');
+    const activeItem = document.querySelector(`.file-item[data-filepath="${filePath}"]`);
+    if (activeItem) activeItem.classList.add('active');
     
     // 更新当前文件名
     document.getElementById('currentFileName').textContent = file.display_name;
@@ -204,24 +212,27 @@ async function loadPDFContent(file) {
         } else {
             throw new Error('PDF内容为空');
         }
-        
+
     } catch (error) {
         console.error('加载PDF内容失败:', error);
         console.error('文件信息:', file);
-        
+
         showAlert(`加载PDF失败: ${error.message}`, 'danger');
-        
+
         // 显示错误信息
-        document.getElementById('noPreview').innerHTML = `
-            <i class="fas fa-exclamation-triangle text-danger"></i>
-            <h5 class="mt-3">加载失败</h5>
-            <p class="text-muted">${error.message}</p>
-            <p class="text-muted small">文件路径: ${file.path}</p>
-            <button class="btn btn-sm btn-primary mt-2" onclick="selectPDFFile(0)">
-                <i class="fas fa-redo me-2"></i>重新加载
+        const noPreview = document.getElementById('noPreview');
+        noPreview.innerHTML = `
+            <svg class="w-16 h-16 mb-4 text-red-500/60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z"/>
+            </svg>
+            <h5 class="text-lg font-semibold mb-2 text-red-400">加载失败</h5>
+            <p class="text-gray-500">${error.message}</p>
+            <p class="text-gray-600 text-xs mt-1">文件路径: ${file.path}</p>
+            <button class="btn-primary text-white px-4 py-2 text-xs font-bold mt-4" onclick="selectPDFFile(0)">
+                重新加载
             </button>
         `;
-        document.getElementById('noPreview').style.display = 'flex';
+        noPreview.style.display = 'flex';
         document.getElementById('pdfViewer').style.display = 'none';
     }
 }
@@ -286,15 +297,19 @@ function setupEventListeners() {
     searchInput.addEventListener('input', function() {
         filterFiles();
     });
-    
+
     // 年份筛选
     const yearButtons = document.querySelectorAll('#yearFilter button');
     yearButtons.forEach(button => {
         button.addEventListener('click', function() {
             // 更新按钮状态
-            yearButtons.forEach(btn => btn.classList.remove('active'));
-            this.classList.add('active');
-            
+            yearButtons.forEach(btn => {
+                btn.classList.remove('active', 'btn-primary');
+                btn.classList.add('btn-outline');
+            });
+            this.classList.remove('btn-outline');
+            this.classList.add('active', 'btn-primary');
+
             // 筛选文件
             filterFiles();
         });
@@ -332,34 +347,56 @@ function filterFiles() {
 // 显示警告信息
 function showAlert(message, type = 'info') {
     // 移除现有的警告
-    const existingAlert = document.querySelector('.alert-dismissible');
+    const existingAlert = document.querySelector('.alert-toast');
     if (existingAlert) {
         existingAlert.remove();
     }
-    
+
+    let bgColor, borderColor;
+    switch (type) {
+        case 'success':
+            bgColor = 'rgba(34, 197, 94, 0.1)';
+            borderColor = 'rgba(34, 197, 94, 0.3)';
+            break;
+        case 'error': case 'danger':
+            bgColor = 'rgba(239, 68, 68, 0.1)';
+            borderColor = 'rgba(239, 68, 68, 0.3)';
+            break;
+        case 'warning':
+            bgColor = 'rgba(245, 158, 11, 0.1)';
+            borderColor = 'rgba(245, 158, 11, 0.3)';
+            break;
+        default:
+            bgColor = 'rgba(230, 0, 0, 0.1)';
+            borderColor = 'rgba(230, 0, 0, 0.3)';
+    }
+
     const alertDiv = document.createElement('div');
-    alertDiv.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
+    alertDiv.className = 'alert-toast fixed top-5 right-5 z-50';
     alertDiv.style.cssText = `
-        top: 20px;
-        right: 20px;
-        z-index: 9999;
+        background: ${bgColor};
+        border: 1px solid ${borderColor};
+        clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px));
         min-width: 300px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        padding: 1rem;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
     `;
-    
+
     alertDiv.innerHTML = `
-        ${message}
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        <div style="display:flex;align-items:center;gap:0.75rem;">
+            <span style="color:white">${message}</span>
+            <button type="button" style="color:#9CA3AF;font-size:1.25rem;margin-left:auto;background:none;border:none;cursor:pointer;line-height:1;" onclick="this.parentElement.parentElement.remove()">&times;</button>
+        </div>
     `;
-    
+
     document.body.appendChild(alertDiv);
-    
-    // 3秒后自动消失
+
+    // 4秒后自动消失
     setTimeout(() => {
         if (alertDiv.parentNode) {
             alertDiv.remove();
         }
-    }, 3000);
+    }, 4000);
 }
 
 // 键盘快捷键支持
