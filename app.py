@@ -1618,4 +1618,8 @@ def api_confirm_import():
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    # 从环境变量获取端口，Render 会自动注入 PORT 变量，如果没有则默认 5000
+    port = int(os.environ.get("PORT", 5000))
+    # 必须设置 host='0.0.0.0' 才能让外网访问
+    # 部署到公网时，建议将 debug 设置为 False
+    app.run(host='0.0.0.0', port=port, debug=False)
