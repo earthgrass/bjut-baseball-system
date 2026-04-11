@@ -630,6 +630,9 @@
 
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script>
+        // 登录状态传递给 JS
+        window.IS_LOGGED_IN = {% if current_user.is_authenticated %}true{% else %}false{% endif %};
+
         // Mobile Menu
         const menuBtn = document.getElementById('mobile-menu-btn');
         const mobileMenu = document.getElementById('mobile-menu');

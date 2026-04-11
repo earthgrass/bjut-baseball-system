@@ -561,6 +561,8 @@
 
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script>
+        const isLoggedIn = {% if current_user.is_authenticated %}true{% else %}false{% endif %};
+
         // Mobile Menu
         const menuBtn = document.getElementById('mobile-menu-btn');
         const mobileMenu = document.getElementById('mobile-menu');
@@ -591,6 +593,16 @@
                     const hr = player.home_runs_batting || 0;
                     const rbi = player.rbi_total || 0;
 
+                    let actionHtml = '';
+                    if (isLoggedIn) {
+                        actionHtml = `<div class="flex gap-2">
+                            <button onclick="editPlayer(${player.id})" class="btn-outline text-white px-4 py-1.5 font-heading text-xs font-bold">编辑</button>
+                            <button onclick="deletePlayer(${player.id})" class="btn-primary text-white px-4 py-1.5 font-heading text-xs font-bold">删除</button>
+                        </div>`;
+                    } else {
+                        actionHtml = '<span class="text-gray-500 text-sm">需管理员登录</span>';
+                    }
+
                     tbody.append(`
                         <tr class="hover:bg-arena-red/5 transition-colors">
                             <td><span class="jersey-number">${player.jersey_number || '00'}</span></td>
@@ -601,12 +613,7 @@
                             <td class="font-semibold">${hr}</td>
                             <td class="font-semibold">${rbi}</td>
                             <td class="text-arena-red font-bold">${ops}</td>
-                            <td>
-                                <div class="flex gap-2">
-                                    <button onclick="editPlayer(${player.id})" class="btn-outline text-white px-4 py-1.5 font-heading text-xs font-bold">编辑</button>
-                                    <button onclick="deletePlayer(${player.id})" class="btn-primary text-white px-4 py-1.5 font-heading text-xs font-bold">删除</button>
-                                </div>
-                            </td>
+                            <td>${actionHtml}</td>
                         </tr>
                     `);
                 });

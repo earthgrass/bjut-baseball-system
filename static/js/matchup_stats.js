@@ -2,7 +2,14 @@ let playersData = [];
 let opponentsData = [];
 let matchupRecordCache = new Map();
 
+// 登录状态 - 从模板中传入
+let isLoggedIn = false;
+
 document.addEventListener('DOMContentLoaded', async function() {
+    // 从全局变量获取登录状态
+    if (typeof window.IS_LOGGED_IN !== 'undefined') {
+        isLoggedIn = window.IS_LOGGED_IN;
+    }
     await Promise.all([loadPlayers(), loadOpponents()]);
 });
 
@@ -202,11 +209,11 @@ function renderBattingTable(records, options) {
             <td>${record.walks}</td>
             <td>${record.stolen_bases}</td>
             <td><span class="${getAvgClass(record.batting_average)} font-bold">${record.batting_average.toFixed(3)}</span></td>
-            <td>
+            ${isLoggedIn ? `<td>
                 <button class="btn-primary text-white px-3 py-1 font-heading text-xs font-bold" onclick="deleteGameRecord(${record.id})">
                     删除
                 </button>
-            </td>
+            </td>` : '<td><span class="text-gray-500 text-sm">需登录</span></td>'}
         `;
         tableBody.appendChild(row);
     });
@@ -251,11 +258,11 @@ function renderPitchingTable(records, options) {
             <td>${record.era.toFixed(2)}</td>
             <td>${record.whip.toFixed(2)}</td>
             <td>${record.result_text}</td>
-            <td>
+            ${isLoggedIn ? `<td>
                 <button class="btn-primary text-white px-3 py-1 font-heading text-xs font-bold" onclick="deleteGameRecord(${record.id})">
                     删除
                 </button>
-            </td>
+            </td>` : '<td><span class="text-gray-500 text-sm">需登录</span></td>'}
         `;
         tableBody.appendChild(row);
     });
@@ -300,6 +307,12 @@ function resetFilteredResults() {
 }
 
 async function deleteGameRecord(recordId) {
+    // 检查登录状态
+    if (!isLoggedIn) {
+        showAlert('请先登录管理员账号', 'error');
+        return;
+    }
+
     const recordMeta = matchupRecordCache.get(recordId) || {};
     const gameDate = recordMeta.game_date || '未知日期';
     const opponent = recordMeta.opponent || '未知对手';
