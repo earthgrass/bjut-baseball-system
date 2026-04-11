@@ -5,7 +5,9 @@ MPL_CACHE_DIR = os.path.join(PROJECT_ROOT, 'instance', 'matplotlib-cache')
 os.makedirs(MPL_CACHE_DIR, exist_ok=True)
 os.environ.setdefault('MPLCONFIGDIR', MPL_CACHE_DIR)
 
-from flask import Flask, render_template, request, jsonify, send_file
+from flask import Flask, render_template, request, jsonify, send_file, redirect, url_for, flash
+from flask_login import LoginManager, login_user, logout_user, login_required, current_user
+from functools import wraps
 try:
     from flask_migrate import Migrate
 except ModuleNotFoundError:
@@ -31,15 +33,8 @@ from database import (
     Position,
     FielderProfile,
     PitcherProfile,
+    User,
 )
-
-# 修复 Windows 控制台编码
-if sys.platform == 'win32':
-    try:
-        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
-        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
-    except Exception:
-        pass
 
 # 设置 matplotlib 使用项目内缓存和本机可用的中文字体
 MATPLOTLIB_CJK_FONTS = [
@@ -66,6 +61,67 @@ app.config['JSON_AS_ASCII'] = False
 # 初始化数据库
 init_db(app)
 migrate = Migrate(app, db) if Migrate else None
+
+# 初始化 Flask-Login
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'login_page'
+login_manager.login_message = '请先登录管理员账号'
+
+
+@login_manager.user_loader
+def load_user(user_id):
+    return User.query.get(int(user_id))
+
+
+def admin_required(f):
+    """管理员权限装饰器"""
+    @wraps(f)
+    @login_required
+    def decorated_function(*args, **kwargs):
+        if not current_user.is_admin:
+            flash('需要管理员权限', 'error')
+            return redirect(url_for('login_page'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+# 登录/登出路由
+@app.route('/login', methods=['GET'])
+def login_page():
+    """登录页面"""
+    if current_user.is_authenticated:
+        return redirect(url_for('index'))
+    return render_template('login.html')
+
+
+@app.route('/login', methods=['POST'])
+def login_submit():
+    """处理登录请求"""
+    username = request.form.get('username', '').strip()
+    password = request.form.get('password', '')
+
+    if not username or not password:
+        flash('请输入用户名和密码', 'error')
+        return redirect(url_for('login_page'))
+
+    user = User.query.filter_by(username=username).first()
+    if user and user.check_password(password):
+        login_user(user)
+        flash('登录成功', 'success')
+        return redirect(url_for('index'))
+    else:
+        flash('用户名或密码错误', 'error')
+        return redirect(url_for('login_page'))
+
+
+@app.route('/logout', methods=['POST'])
+@login_required
+def logout():
+    """登出"""
+    logout_user()
+    flash('已登出', 'success')
+    return redirect(url_for('index'))
 
 def _fielder_query():
     return Player.query.filter(Player._is_pitcher.is_(False))
@@ -176,6 +232,7 @@ def get_players():
     return jsonify(result)
 
 @app.route('/api/players', methods=['POST'])
+@admin_required
 def add_player():
     """添加新球员"""
     data = request.json or {}
@@ -212,6 +269,7 @@ def get_player(player_id):
 
 
 @app.route('/api/players/<int:player_id>', methods=['PUT'])
+@admin_required
 def update_player(player_id):
     """更新球员信息"""
     player = Player.query.get_or_404(player_id)
@@ -328,6 +386,7 @@ def update_player_stats(player, data):
                 setattr(player, field, int(data[field]))
 
 @app.route('/api/players/<int:player_id>', methods=['DELETE'])
+@admin_required
 def delete_player(player_id):
     """删除球员"""
     player = Player.query.get_or_404(player_id)
@@ -359,6 +418,7 @@ def players_page():
     return render_template('players.html')
 
 @app.route('/add_player')
+@admin_required
 def add_player_page():
     """添加球员页面"""
     return render_template('add_player.html')
@@ -544,6 +604,7 @@ def get_pitchers():
     return jsonify(result)
 
 @app.route('/api/game_records', methods=['POST'])
+@admin_required
 def add_game_record():
     """添加比赛记录"""
     data = request.json
@@ -849,6 +910,7 @@ def game_stats_page():
     return render_template('game_stats.html')
 
 @app.route('/add_game_record')
+@admin_required
 def add_game_record_page():
     """添加比赛记录页面"""
     players = Player.query.all()
@@ -1372,6 +1434,7 @@ def get_all_game_records():
     return jsonify(_build_matchup_payload(records))
 
 @app.route('/api/matchup/game_record/<int:record_id>', methods=['DELETE'])
+@admin_required
 def delete_game_record(record_id):
     """删除比赛记录"""
     record = GameRecord.query.get_or_404(record_id)
@@ -1462,6 +1525,7 @@ def api_parse_pdf(filepath):
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/pdf/import_all', methods=['POST'])
+@admin_required
 def api_import_all_pdfs():
     """批量导入所有PDF"""
     dry_run = request.json.get('dry_run', False) if request.json else False
@@ -1475,6 +1539,7 @@ def api_import_all_pdfs():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/pdf/import_one', methods=['POST'])
+@admin_required
 def api_import_one_pdf():
     """导入单个PDF"""
     data = request.json or {}
@@ -1504,11 +1569,13 @@ def api_import_one_pdf():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/upload_pdf')
+@admin_required
 def upload_pdf_page():
     """PDF上传导入页面"""
     return render_template('upload_pdf.html')
 
 @app.route('/api/pdf/upload', methods=['POST'])
+@admin_required
 def api_upload_pdf():
     """上传PDF文件并解析导入比赛数据"""
     if 'file' not in request.files:
@@ -1592,6 +1659,7 @@ def api_upload_pdf():
 
 
 @app.route('/api/pdf/confirm_import', methods=['POST'])
+@admin_required
 def api_confirm_import():
     """确认导入已解析的PDF数据"""
     data = request.json or {}
@@ -1621,5 +1689,5 @@ if __name__ == '__main__':
     # 从环境变量获取端口，Render 会自动注入 PORT 变量，如果没有则默认 5000
     port = int(os.environ.get("PORT", 5000))
     # 必须设置 host='0.0.0.0' 才能让外网访问
-    # 部署到公网时，建议将 debug 设置为 False
-    app.run(host='0.0.0.0', port=port, debug=False)
+    # use_reloader=False 避免 Windows 上的 I/O 问题
+    app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)

@@ -1,6 +1,7 @@
 Flask==2.3.3
 Flask-SQLAlchemy==3.0.5
 Flask-Migrate==4.1.0
+Flask-Login==0.6.3
 setuptools>=68
 pandas==2.2.3
 matplotlib==3.9.2

@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>管理员登录 - POWER ARENA</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@300;400;500;600;700&family=Russo+One&family=Orbitron:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --color-primary: #E60000;
+            --color-bg: #050505;
+            --color-surface: #0A0A0A;
+            --color-border: #1E1E1E;
+        }
+
+        *, *::before, *::after { box-sizing: border-box; }
+
+        body {
+            font-family: 'Chakra Petch', sans-serif;
+            background-color: var(--color-bg);
+            color: #FFFFFF;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .font-heading { font-family: 'Russo One', sans-serif; }
+
+        .arena-bg {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            pointer-events: none;
+            background:
+                radial-gradient(ellipse at 30% 20%, rgba(230, 0, 0, 0.1) 0%, transparent 50%),
+                radial-gradient(ellipse at 70% 80%, rgba(255, 26, 26, 0.06) 0%, transparent 45%),
+                var(--color-bg);
+        }
+
+        .login-card {
+            position: relative;
+            background: linear-gradient(180deg, rgba(17, 17, 17, 0.95) 0%, rgba(10, 10, 10, 0.95) 100%);
+            border: 1px solid rgba(230, 0, 0, 0.2);
+            clip-path: polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 20px 100%, 0 calc(100% - 20px));
+            padding: 2.5rem;
+            width: 100%;
+            max-width: 420px;
+            z-index: 1;
+        }
+
+        .login-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, transparent, #E60000, transparent);
+        }
+
+        .login-input {
+            background: rgba(5, 5, 5, 0.8);
+            border: 1px solid rgba(230, 0, 0, 0.15);
+            color: #FFFFFF;
+            padding: 0.75rem 1rem;
+            width: 100%;
+            font-family: 'Chakra Petch', sans-serif;
+            font-size: 0.95rem;
+            transition: border-color 0.3s, box-shadow 0.3s;
+            clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+        }
+
+        .login-input:focus {
+            outline: none;
+            border-color: rgba(230, 0, 0, 0.5);
+            box-shadow: 0 0 15px rgba(230, 0, 0, 0.15);
+        }
+
+        .login-input::placeholder {
+            color: #555;
+        }
+
+        .login-btn {
+            background: linear-gradient(135deg, #E60000 0%, #B30000 100%);
+            color: white;
+            font-family: 'Russo One', sans-serif;
+            font-size: 1rem;
+            letter-spacing: 0.1em;
+            padding: 0.85rem 2rem;
+            width: 100%;
+            border: none;
+            cursor: pointer;
+            clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 10px 100%, 0 calc(100% - 10px));
+            transition: all 0.3s ease;
+        }
+
+        .login-btn:hover {
+            box-shadow: 0 0 25px rgba(230, 0, 0, 0.4);
+            transform: translateY(-1px);
+        }
+
+        .login-btn:active {
+            transform: translateY(0);
+        }
+
+        .flash-msg {
+            padding: 0.6rem 1rem;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            margin-bottom: 1rem;
+        }
+
+        .flash-error {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: #FCA5A5;
+        }
+
+        .flash-success {
+            background: rgba(34, 197, 94, 0.1);
+            border: 1px solid rgba(34, 197, 94, 0.3);
+            color: #86EFAC;
+        }
+    </style>
+</head>
+<body>
+    <div class="arena-bg"></div>
+
+    <div class="login-card">
+        <!-- Logo -->
+        <div class="text-center mb-8">
+            <svg class="w-12 h-12 mx-auto mb-3 text-red-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2" />
+                <line x1="12" y1="22" x2="12" y2="15.5" />
+                <polyline points="22 8.5 12 15.5 2 8.5" />
+            </svg>
+            <h1 class="font-heading text-2xl text-white tracking-tight">
+                POWER <span class="text-red-500">ARENA</span>
+            </h1>
+            <p class="text-gray-500 text-sm mt-1">管理员登录</p>
+        </div>
+
+        <!-- Flash messages -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="flash-msg flash-{{ category }}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <!-- Login Form -->
+        <form method="POST" action="/login">
+            <div class="mb-4">
+                <label class="block text-gray-400 text-xs font-semibold mb-2 uppercase tracking-wider">用户名</label>
+                <input type="text" name="username" class="login-input" placeholder="请输入管理员用户名" required autocomplete="username">
+            </div>
+
+            <div class="mb-6">
+                <label class="block text-gray-400 text-xs font-semibold mb-2 uppercase tracking-wider">密码</label>
+                <input type="password" name="password" class="login-input" placeholder="请输入密码" required autocomplete="current-password">
+            </div>
+
+            <button type="submit" class="login-btn">
+                登 录
+            </button>
+        </form>
+
+        <div class="text-center mt-6">
+            <a href="/" class="text-gray-500 text-sm hover:text-red-400 transition-colors">返回首页</a>
+        </div>
+    </div>
+</body>
+</html>

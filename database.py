@@ -2,8 +2,10 @@ from datetime import datetime, timezone
 import random
 
 from flask_sqlalchemy import SQLAlchemy
+from flask_login import UserMixin
 from sqlalchemy import inspect, text
 from sqlalchemy.ext.hybrid import hybrid_property
+from werkzeug.security import generate_password_hash, check_password_hash
 
 db = SQLAlchemy()
 
@@ -616,6 +618,7 @@ def init_db(app):
         init_positions()
         migrate_legacy_player_stats()
         sync_stats_from_game_records()
+        init_default_admin()
 
 
 def init_positions():
@@ -861,3 +864,38 @@ def add_sample_data():
         player.update_calculated_fields()
 
     db.session.commit()
+
+
+# ============ 用户模型 ============
+class User(db.Model, UserMixin):
+    """用户模型 - 用于管理员登录"""
+    __tablename__ = 'users'
+
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    password_hash = db.Column(db.String(256), nullable=False)
+    is_admin = db.Column(db.Boolean, default=True)  # 默认为管理员
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+    def set_password(self, password):
+        """设置密码（加密存储）"""
+        self.password_hash = generate_password_hash(password)
+
+    def check_password(self, password):
+        """验证密码"""
+        return check_password_hash(self.password_hash, password)
+
+    def __repr__(self):
+        return f'<User {self.username}>'
+
+
+def init_default_admin():
+    """初始化默认管理员账号 admin/admin123"""
+    # 检查是否已存在管理员
+    admin = User.query.filter_by(username='admin').first()
+    if not admin:
+        admin = User(username='admin', is_admin=True)
+        admin.set_password('admin123')
+        db.session.add(admin)
+        db.session.commit()
+        print("默认管理员账号已创建: admin / admin123")
