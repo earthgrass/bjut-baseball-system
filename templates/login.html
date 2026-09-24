@@ -83,6 +83,7 @@
     {% endwith %}
 
     <form method="POST" action="{{ url_for('login_submit') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="mb-4">
             <label class="block text-gray-400 text-xs font-semibold mb-2 uppercase tracking-wider">用户名</label>
             <input type="text" name="username" class="login-input" placeholder="请输入管理员用户名" required autocomplete="username">

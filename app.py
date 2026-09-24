@@ -16,6 +16,9 @@ except ImportError:
 
 from flask import Flask, render_template, request, jsonify, send_file, redirect, url_for, flash
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
+from flask_wtf.csrf import CSRFProtect, generate_csrf
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from functools import wraps
 try:
     from flask_migrate import Migrate
@@ -44,6 +47,7 @@ from database import (
     PitcherProfile,
     User,
 )
+from config import get_config
 
 # 配置日志：所有关键事件写到 stderr（适合 docker / 平台日志收集）
 logging.basicConfig(
@@ -70,13 +74,15 @@ matplotlib.rcParams['axes.unicode_minus'] = False
 app = Flask(__name__)
 os.makedirs(app.instance_path, exist_ok=True)
 DATABASE_FILE = os.path.join(app.instance_path, 'baseball_players.db')
+
+# B3: 从 config.py 加载配置（覆盖下面的硬编码 SQLAlchemy 配置）
+_app_config = get_config()
+app.config.from_object(_app_config)
 app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{DATABASE_FILE}'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['JSON_AS_ASCII'] = False
 
 # A2: SECRET_KEY 必须从环境变量读取
 _flask_env = os.environ.get('FLASK_ENV', 'production').lower()
-_secret_key = os.environ.get('SECRET_KEY')
+_secret_key = app.config.get('SECRET_KEY') or os.environ.get('SECRET_KEY')
 if _secret_key:
     app.config['SECRET_KEY'] = _secret_key
 elif _flask_env == 'development':
@@ -94,11 +100,39 @@ else:
 init_db(app)
 migrate = Migrate(app, db) if Migrate else None
 
+# B1: 全局启用 CSRF 保护（API 路由用 @csrf.exempt 单独豁免）
+csrf = CSRFProtect()
+csrf.init_app(app)
+
+# B2: 速率限制（登录端点尤其严格；API 默认 60/分钟）
+limiter = Limiter(
+    key_func=get_remote_address,
+    storage_uri=app.config.get('RATELIMIT_STORAGE_URI', 'memory://'),
+    default_limits=[app.config.get('RATELIMIT_DEFAULT', '60/minute')],
+    enabled=app.config.get('RATELIMIT_ENABLED', _flask_env != 'testing'),
+)
+limiter.init_app(app)
+
 # 初始化 Flask-Login
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login_page'
 login_manager.login_message = '请先登录管理员账号'
+
+
+@app.context_processor
+def inject_csrf_token():
+    """所有模板都能用 {{ csrf_token() }} 获取 CSRF token"""
+    return {'csrf_token': generate_csrf}
+
+
+@app.before_request
+def exempt_api_from_csrf():
+    """所有 /api/* JSON 接口不要求 CSRF token（由 admin_required 装饰器兜底保护）"""
+    if request.path.startswith('/api/'):
+        view = app.view_functions.get(request.endpoint)
+        if view:
+            csrf.exempt(view)
 
 
 @login_manager.user_loader
@@ -157,6 +191,7 @@ def login_page():
 
 
 @app.route('/login', methods=['POST'])
+@limiter.limit(lambda: app.config.get('RATELIMIT_LOGIN', '5/minute'))
 def login_submit():
     """处理登录请求"""
     username = request.form.get('username', '').strip()
@@ -169,9 +204,11 @@ def login_submit():
     user = User.query.filter_by(username=username).first()
     if user and user.check_password(password):
         login_user(user)
+        logger.info('User %s logged in', username)
         flash('登录成功', 'success')
         return redirect(url_for('index'))
     else:
+        logger.warning('Failed login attempt for username: %s', username)
         flash('用户名或密码错误', 'error')
         return redirect(url_for('login_page'))
 
