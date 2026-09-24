@@ -1,9 +1,18 @@
 import os
+import secrets
+import logging
 
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 MPL_CACHE_DIR = os.path.join(PROJECT_ROOT, 'instance', 'matplotlib-cache')
 os.makedirs(MPL_CACHE_DIR, exist_ok=True)
 os.environ.setdefault('MPLCONFIGDIR', MPL_CACHE_DIR)
+
+# 加载 .env（开发模式可选，python-dotenv 是隐式依赖；缺失则跳过）
+try:
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(PROJECT_ROOT, '.env'))
+except ImportError:
+    pass
 
 from flask import Flask, render_template, request, jsonify, send_file, redirect, url_for, flash
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
@@ -36,6 +45,14 @@ from database import (
     User,
 )
 
+# 配置日志：所有关键事件写到 stderr（适合 docker / 平台日志收集）
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+    stream=sys.stderr,
+)
+logger = logging.getLogger('baseball')
+
 # 设置 matplotlib 使用项目内缓存和本机可用的中文字体
 MATPLOTLIB_CJK_FONTS = [
     'PingFang HK',
@@ -55,8 +72,23 @@ os.makedirs(app.instance_path, exist_ok=True)
 DATABASE_FILE = os.path.join(app.instance_path, 'baseball_players.db')
 app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{DATABASE_FILE}'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['SECRET_KEY'] = 'your-secret-key-here'
 app.config['JSON_AS_ASCII'] = False
+
+# A2: SECRET_KEY 必须从环境变量读取
+_flask_env = os.environ.get('FLASK_ENV', 'production').lower()
+_secret_key = os.environ.get('SECRET_KEY')
+if _secret_key:
+    app.config['SECRET_KEY'] = _secret_key
+elif _flask_env == 'development':
+    # 开发模式：每次启动生成新的随机 key，方便本地开发（session 会失效）
+    app.config['SECRET_KEY'] = secrets.token_hex(32)
+    logger.warning('SECRET_KEY 未设置，开发模式使用随机生成的临时密钥（每次重启会失效）')
+else:
+    # 生产模式：没有 SECRET_KEY 直接拒绝启动，避免静默使用占位符
+    raise RuntimeError(
+        'SECRET_KEY 环境变量未设置。生产环境必须设置，请运行：'
+        'python -c "import secrets; print(secrets.token_hex(32))"'
+    )
 
 # 初始化数据库
 init_db(app)
@@ -84,6 +116,35 @@ def admin_required(f):
             return redirect(url_for('login_page'))
         return f(*args, **kwargs)
     return decorated_function
+
+
+# A4: 路径穿越防护 — 规范化 + commonpath 严格判断
+def _safe_data_path(filepath: str) -> str:
+    """将 'data' 下的相对路径解析为真实绝对路径，并校验其确实在 data 目录下。
+
+    Raises:
+        ValueError: 路径逃出 data 目录。
+    """
+    base = os.path.realpath(os.path.join(PROJECT_ROOT, 'data'))
+    # 去除前导分隔符，合并
+    cleaned = filepath.lstrip('/\\')
+    target = os.path.realpath(os.path.join(base, cleaned))
+    if os.path.commonpath([base, target]) != base:
+        raise ValueError('无效的文件路径')
+    return target
+
+
+# A5: 错误信息脱敏
+def _safe_error(e: Exception, status: int = 400):
+    """将异常统一包装为 JSON 响应，避免泄露内部信息。
+
+    ValueError / KeyError / TypeError 返回原消息（业务可读错误），
+    其他异常统一返回 '操作失败' 并写详细堆栈到日志。
+    """
+    if isinstance(e, (ValueError, KeyError, TypeError)):
+        return jsonify({'error': str(e)}), status
+    logger.exception('Unhandled exception')
+    return jsonify({'error': '操作失败'}), 500
 
 
 # 登录/登出路由
@@ -259,7 +320,7 @@ def add_player():
         
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 400
+        return _safe_error(e)
 
 @app.route('/api/players/<int:player_id>', methods=['GET'])
 def get_player(player_id):
@@ -350,7 +411,7 @@ def update_player(player_id):
         
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 400
+        return _safe_error(e)
     
 def update_player_stats(player, data):
     """更新球员统计字段"""
@@ -410,7 +471,7 @@ def delete_player(player_id):
         })
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 400
+        return _safe_error(e)
 
 @app.route('/players')
 def players_page():
@@ -721,7 +782,7 @@ def add_game_record():
         
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 400
+        return _safe_error(e)
 
 @app.route('/api/stats/batting_leaderboard')
 def batting_leaderboard():
@@ -916,29 +977,6 @@ def add_game_record_page():
     players = Player.query.all()
     return render_template('add_game_record.html', players=players)
 
-@app.route('/api/debug/players')
-def debug_players():
-    """调试：查看数据库中的所有球员"""
-    players = Player.query.all()
-    result = []
-    for player in players:
-        result.append({
-            'id': player.id,
-            'name': player.name,
-            'jersey_number': player.jersey_number,
-            'position': player.primary_position,
-            'is_pitcher': player.is_pitcher
-        })
-    return jsonify({
-        'total': len(result),
-        'players': result
-    })
-
-@app.route('/debug')
-def debug_page():
-    """调试页面"""
-    return render_template('debug.html')
-
 @app.route('/pdf_viewer')
 def pdf_viewer_page():
     """PDF查看器页面"""
@@ -989,20 +1027,18 @@ def view_pdf(filepath):
     """查看PDF文件"""
     import os
     import urllib.parse
-    
+
     # 解码URL编码的文件路径
     decoded_filepath = urllib.parse.unquote(filepath)
-    
-    # 构建完整的文件路径
-    full_path = os.path.join('data', decoded_filepath)
-    
-    # 安全检查：确保路径在data目录下
-    full_path = os.path.normpath(full_path)
-    if not full_path.startswith('data'):
-        return jsonify({'error': '无效的文件路径'}), 400
-    
+
+    # A4: 路径穿越防护
+    try:
+        full_path = _safe_data_path(decoded_filepath)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+
     if not os.path.exists(full_path):
-        return jsonify({'error': f'文件不存在: {full_path}'}), 404
+        return jsonify({'error': '文件不存在'}), 404
     
     try:
         # 读取PDF文件内容
@@ -1021,28 +1057,6 @@ def view_pdf(filepath):
         
     except Exception as e:
         return jsonify({'error': f'读取文件失败: {str(e)}'}), 500
-
-@app.route('/api/test/update_player', methods=['POST'])
-def test_update_player():
-    """测试更新球员数据"""
-    data = request.json
-
-    player = Player.query.first()
-    if player:
-        if 'home_runs_batting' in data:
-            player.home_runs_batting = data['home_runs_batting']
-        if 'rbi_total' in data:
-            player.rbi_total = data['rbi_total']
-
-        player.update_calculated_fields()
-        db.session.commit()
-
-        return jsonify({
-            'message': '测试更新成功',
-            'player': player.to_dict()
-        })
-    
-    return jsonify({'error': '没有找到球员'}), 404
 
 # 新增：对局信息相关路由
 @app.route('/matchup_stats')
@@ -1496,7 +1510,7 @@ def delete_game_record(record_id):
         
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 400
+        return _safe_error(e)
 
 @app.route('/import_pdf')
 def import_pdf_page():
@@ -1510,10 +1524,10 @@ def api_parse_pdf(filepath):
     import urllib.parse
 
     decoded = urllib.parse.unquote(filepath)
-    full_path = os.path.join('data', decoded)
-    full_path = os.path.normpath(full_path)
-    if not full_path.startswith('data'):
-        return jsonify({'error': '无效路径'}), 400
+    try:
+        full_path = _safe_data_path(decoded)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
     if not os.path.exists(full_path):
         return jsonify({'error': '文件不存在'}), 404
 
@@ -1522,7 +1536,7 @@ def api_parse_pdf(filepath):
         result = parse_pdf(full_path)
         return jsonify(result)
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return _safe_error(e, 500)
 
 @app.route('/api/pdf/import_all', methods=['POST'])
 @admin_required
@@ -1536,7 +1550,7 @@ def api_import_all_pdfs():
     except Exception as e:
         import traceback
         traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
+        return _safe_error(e, 500)
 
 @app.route('/api/pdf/import_one', methods=['POST'])
 @admin_required
@@ -1548,10 +1562,10 @@ def api_import_one_pdf():
         return jsonify({'error': '缺少 filepath'}), 400
 
     import os
-    full_path = os.path.join('data', filepath)
-    full_path = os.path.normpath(full_path)
-    if not full_path.startswith('data'):
-        return jsonify({'error': '无效路径'}), 400
+    try:
+        full_path = _safe_data_path(filepath)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
     if not os.path.exists(full_path):
         return jsonify({'error': '文件不存在'}), 404
 
@@ -1566,7 +1580,7 @@ def api_import_one_pdf():
     except Exception as e:
         import traceback
         traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
+        return _safe_error(e, 500)
 
 @app.route('/upload_pdf')
 @admin_required
@@ -1683,11 +1697,13 @@ def api_confirm_import():
     except Exception as e:
         import traceback
         traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
+        return _safe_error(e, 500)
 
 if __name__ == '__main__':
     # 从环境变量获取端口，Render 会自动注入 PORT 变量，如果没有则默认 5000
     port = int(os.environ.get("PORT", 5000))
+    # debug 模式仅在显式设置 FLASK_DEBUG=1 时启用（生产必须 0）
+    debug = os.environ.get('FLASK_DEBUG', '0') == '1'
     # 必须设置 host='0.0.0.0' 才能让外网访问
     # use_reloader=False 避免 Windows 上的 I/O 问题
-    app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
+    app.run(host='0.0.0.0', port=port, debug=debug, use_reloader=False)

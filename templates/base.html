@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}POWER ARENA - 棒球队管理系统{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@300;400;500;600;700&family=Russo+One&family=Orbitron:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/arena.css') }}">
+    {# Tailwind 配置 + CDN (Phase D2: 配置已外链) #}
+    <script src="{{ url_for('static', filename='js/tailwind.config.js') }}"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    {% block extra_head %}{% endblock %}
+</head>
+<body class="min-h-screen relative">
+    {% include "_arena_bg.html" %}
+    {% include "_navbar.html" %}
+
+    <main class="relative z-10 pt-20">
+        {% block content %}{% endblock %}
+    </main>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>

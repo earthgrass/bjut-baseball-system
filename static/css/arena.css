@@ -1,0 +1,358 @@
+/* ====================================================================
+ * POWER ARENA — 全局竞技风样式
+ * 由 10 个模板的内联 <style> 合并而来 (Phase D2)
+ * 任何新页面不应再内联重复定义；改这里即可
+ * ==================================================================== */
+
+:root {
+    --color-primary: #E60000;
+    --color-primary-dark: #B30000;
+    --color-bg: #050505;
+    --color-surface: #0A0A0A;
+    --color-surface-2: #111111;
+    --color-border: #1E1E1E;
+    --color-accent: #FF1A1A;
+    --color-glow: rgba(230, 0, 0, 0.5);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+    font-family: 'Chakra Petch', sans-serif;
+    background-color: var(--color-bg);
+    color: #FFFFFF;
+    overflow-x: hidden;
+    position: relative;
+}
+
+.font-heading { font-family: 'Russo One', sans-serif; }
+.font-tech { font-family: 'Orbitron', sans-serif; }
+
+/* ===== DEEP SPACE BACKGROUND WITH ANIMATED GEOMETRY ===== */
+.arena-bg {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    overflow: hidden;
+    background:
+        radial-gradient(ellipse at 20% 30%, rgba(230, 0, 0, 0.08) 0%, transparent 50%),
+        radial-gradient(ellipse at 80% 70%, rgba(255, 26, 26, 0.06) 0%, transparent 45%),
+        radial-gradient(ellipse at 50% 50%, rgba(20, 20, 20, 1) 0%, rgba(5, 5, 5, 1) 100%);
+}
+
+.arena-bg .geo-shape {
+    position: absolute;
+    border: 1px solid rgba(230, 0, 0, 0.08);
+    opacity: 0.4;
+    will-change: transform;
+}
+
+.arena-bg .hexagon {
+    width: 300px;
+    height: 260px;
+    background: linear-gradient(135deg, rgba(230, 0, 0, 0.03), transparent);
+    clip-path: polygon(30% 0%, 70% 0%, 100% 50%, 70% 100%, 30% 100%, 0% 50%);
+}
+
+.arena-bg .diamond {
+    width: 200px;
+    height: 200px;
+    background: linear-gradient(45deg, rgba(255, 26, 26, 0.02), transparent);
+    transform: rotate(45deg);
+}
+
+.arena-bg .geo-1 { top: 10%; left: 5%; animation: float-rotate-1 25s ease-in-out infinite; }
+.arena-bg .geo-2 { top: 60%; right: 8%; animation: float-rotate-2 30s ease-in-out infinite; }
+.arena-bg .geo-3 { bottom: 15%; left: 15%; animation: float-rotate-3 35s ease-in-out infinite; }
+
+@keyframes float-rotate-1 {
+    0%, 100% { transform: translate(0, 0) rotate(0deg); }
+    33% { transform: translate(40px, 30px) rotate(120deg); }
+    66% { transform: translate(-30px, 60px) rotate(240deg); }
+}
+@keyframes float-rotate-2 {
+    0%, 100% { transform: translate(0, 0) rotate(0deg); }
+    50% { transform: translate(-50px, -40px) rotate(180deg); }
+}
+@keyframes float-rotate-3 {
+    0%, 100% { transform: translate(0, 0) rotate(0deg); opacity: 0.3; }
+    50% { transform: translate(30px, -50px) rotate(-120deg); opacity: 0.5; }
+}
+
+.arena-bg .grid-perspective {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 60%;
+    background:
+        linear-gradient(to top, transparent 0%, transparent 80%, rgba(5, 5, 5, 1) 100%),
+        repeating-linear-gradient(
+            90deg,
+            transparent,
+            transparent 100px,
+            rgba(230, 0, 0, 0.04) 100px,
+            rgba(230, 0, 0, 0.04) 101px
+        ),
+        repeating-linear-gradient(
+            0deg,
+            transparent,
+            transparent 80px,
+            rgba(230, 0, 0, 0.03) 80px,
+            rgba(230, 0, 0, 0.03) 81px
+        );
+    transform: perspective(500px) rotateX(60deg);
+    transform-origin: bottom;
+    opacity: 0.6;
+}
+
+.arena-bg .particles {
+    position: absolute;
+    inset: 0;
+    background-image:
+        radial-gradient(circle at 20% 20%, rgba(230, 0, 0, 0.15) 1px, transparent 1px),
+        radial-gradient(circle at 80% 40%, rgba(255, 26, 26, 0.1) 1px, transparent 1px),
+        radial-gradient(circle at 40% 80%, rgba(230, 0, 0, 0.12) 1px, transparent 1px);
+    background-size: 200px 200px, 300px 300px, 250px 250px;
+    animation: particle-drift 20s linear infinite;
+}
+
+@keyframes particle-drift {
+    0% { transform: translateY(0); }
+    100% { transform: translateY(-200px); }
+}
+
+/* ===== MECHA SKIPPED CUT CARD ===== */
+.mecha-card {
+    position: relative;
+    background: linear-gradient(135deg, rgba(17, 17, 17, 0.95) 0%, rgba(10, 10, 10, 0.9) 100%);
+    clip-path: polygon(
+        0 0,
+        calc(100% - 24px) 0,
+        100% 24px,
+        100% 100%,
+        24px 100%,
+        0 calc(100% - 24px)
+    );
+    border: 1px solid rgba(230, 0, 0, 0.15);
+    transition: all 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+    overflow: hidden;
+}
+
+.mecha-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 24px;
+    height: 2px;
+    background: linear-gradient(90deg, rgba(230, 0, 0, 0.6), transparent);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.mecha-card::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle at 50% 0%, rgba(230, 0, 0, 0.08) 0%, transparent 70%);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    pointer-events: none;
+}
+
+.mecha-card:hover {
+    transform: translateY(-4px) scale(1.02);
+    box-shadow:
+        0 0 30px rgba(230, 0, 0, 0.4),
+        0 0 60px rgba(230, 0, 0, 0.2),
+        0 8px 32px rgba(0, 0, 0, 0.5),
+        inset 0 1px 0 rgba(230, 0, 0, 0.2);
+    border-color: rgba(230, 0, 0, 0.4);
+}
+
+.mecha-card:hover::before,
+.mecha-card:hover::after { opacity: 1; }
+
+.mecha-card .corner-cut {
+    position: absolute;
+    width: 24px;
+    height: 24px;
+    border: 2px solid rgba(230, 0, 0, 0.3);
+    transition: border-color 0.3s ease;
+}
+
+.mecha-card .corner-tl { top: -1px; left: -1px; border-right: none; border-bottom: none; }
+.mecha-card .corner-br { bottom: -1px; right: -1px; border-left: none; border-top: none; }
+
+.mecha-card:hover .corner-cut {
+    border-color: rgba(230, 0, 0, 0.6);
+    box-shadow: 0 0 8px rgba(230, 0, 0, 0.3);
+}
+
+.mecha-card .energy-line {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    height: 2px;
+    background: linear-gradient(90deg, #E60000, transparent);
+    width: 0;
+    transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.mecha-card:hover .energy-line { width: 100%; }
+
+/* ===== STAT CARD ===== */
+.stat-card {
+    position: relative;
+    background: linear-gradient(180deg, rgba(17, 17, 17, 0.9) 0%, rgba(10, 10, 10, 0.85) 100%);
+    clip-path: polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 16px 100%, 0 calc(100% - 16px));
+    border: 1px solid rgba(230, 0, 0, 0.12);
+    transition: all 0.3s ease;
+    overflow: hidden;
+}
+
+.stat-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; height: 100%;
+    background: linear-gradient(135deg, rgba(230, 0, 0, 0.08) 0%, transparent 50%);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.stat-card:hover {
+    border-color: rgba(230, 0, 0, 0.35);
+    box-shadow: 0 0 25px rgba(230, 0, 0, 0.25);
+    transform: translateY(-2px);
+}
+
+.stat-card:hover::before { opacity: 1; }
+
+/* ===== HERO SECTION ===== */
+.hero-title { position: relative; display: inline-block; }
+
+.hero-title::after {
+    content: '';
+    position: absolute;
+    bottom: -8px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 80%;
+    height: 3px;
+    background: linear-gradient(90deg, transparent, #E60000, transparent);
+    box-shadow: 0 0 10px rgba(230, 0, 0, 0.6);
+}
+
+.scan-line {
+    position: absolute;
+    left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent 0%, rgba(230, 0, 0, 0.2) 20%, rgba(230, 0, 0, 0.5) 50%, rgba(230, 0, 0, 0.2) 80%, transparent 100%);
+    animation: scan 5s ease-in-out infinite;
+    box-shadow: 0 0 8px rgba(230, 0, 0, 0.4);
+}
+
+@keyframes scan {
+    0% { top: 5%; opacity: 0; }
+    10% { opacity: 1; }
+    90% { opacity: 1; }
+    100% { top: 95%; opacity: 0; }
+}
+
+/* ===== CTA BUTTON ===== */
+.btn-primary {
+    clip-path: polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 16px 100%, 0 calc(100% - 16px));
+    background: linear-gradient(135deg, #E60000 0%, #990000 100%);
+    transition: all 0.25s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.btn-primary::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.2) 0%, transparent 50%);
+    opacity: 0;
+    transition: opacity 0.25s ease;
+}
+
+.btn-primary:hover {
+    transform: scale(1.05);
+    box-shadow: 0 0 35px rgba(230, 0, 0, 0.7), 0 0 80px rgba(230, 0, 0, 0.3);
+}
+
+.btn-primary:hover::before { opacity: 1; }
+
+.btn-outline {
+    clip-path: polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 16px 100%, 0 calc(100% - 16px));
+    border: 2px solid #E60000;
+    background: transparent;
+    transition: all 0.25s ease;
+    position: relative;
+}
+
+.btn-outline:hover {
+    background: linear-gradient(135deg, rgba(230, 0, 0, 0.2) 0%, rgba(153, 0, 0, 0.2) 100%);
+    transform: scale(1.05);
+    box-shadow: 0 0 30px rgba(230, 0, 0, 0.4);
+}
+
+/* ===== BADGE ===== */
+.badge {
+    clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 10px 100%, 0 calc(100% - 10px));
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+}
+
+/* ===== NAVIGATION ===== */
+.nav-link { position: relative; }
+
+.nav-link::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    right: 50%;
+    height: 2px;
+    background: #E60000;
+    transition: all 0.3s ease;
+    box-shadow: 0 0 8px rgba(230, 0, 0, 0.6);
+}
+
+.nav-link:hover::after,
+.nav-link.active::after { left: 0; right: 0; }
+
+.section-divider {
+    height: 1px;
+    background: linear-gradient(90deg, transparent 0%, rgba(230, 0, 0, 0.3) 20%, rgba(230, 0, 0, 0.5) 50%, rgba(230, 0, 0, 0.3) 80%, transparent 100%);
+    box-shadow: 0 0 10px rgba(230, 0, 0, 0.3);
+}
+
+.jersey-number {
+    text-shadow: 0 0 20px rgba(230, 0, 0, 0.5);
+    transition: text-shadow 0.3s ease;
+}
+
+.mecha-card:hover .jersey-number {
+    text-shadow: 0 0 30px rgba(230, 0, 0, 0.8), 0 0 60px rgba(230, 0, 0, 0.4);
+}
+
+/* ===== REDUCED MOTION ===== */
+@media (prefers-reduced-motion: reduce) {
+    .arena-bg .geo-shape,
+    .arena-bg .particles,
+    .scan-line { animation: none !important; }
+    .mecha-card:hover,
+    .stat-card:hover,
+    .btn-primary:hover,
+    .btn-outline:hover { transform: none !important; }
+}
+
+/* ===== SCROLLBAR ===== */
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { background: #050505; }
+::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #E60000, #990000); border-radius: 0; }
+::-webkit-scrollbar-thumb:hover { background: linear-gradient(180deg, #FF1A1A, #B30000); }

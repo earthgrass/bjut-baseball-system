@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import os
 import random
 
 from flask_sqlalchemy import SQLAlchemy
@@ -890,12 +891,33 @@ class User(db.Model, UserMixin):
 
 
 def init_default_admin():
-    """初始化默认管理员账号 admin/admin123"""
-    # 检查是否已存在管理员
-    admin = User.query.filter_by(username='admin').first()
-    if not admin:
-        admin = User(username='admin', is_admin=True)
-        admin.set_password('admin123')
-        db.session.add(admin)
-        db.session.commit()
-        print("默认管理员账号已创建: admin / admin123")
+    """初始化默认管理员账号（仅在明确请求时执行，避免误用）。
+
+    行为：
+    - 仅当环境变量 INIT_DEFAULT_ADMIN=1 时才创建默认账号
+    - 用户名从 ADMIN_USERNAME 读取（默认 admin）
+    - 密码优先从 ADMIN_PASSWORD 读取；
+      否则随机生成 16 位并打印到 stdout，请妥善记录
+    - 已存在的同名账号不会重置
+    """
+    if os.environ.get('INIT_DEFAULT_ADMIN') != '1':
+        return
+
+    username = os.environ.get('ADMIN_USERNAME', 'admin').strip() or 'admin'
+    existing = User.query.filter_by(username=username).first()
+    if existing:
+        return
+
+    password = os.environ.get('ADMIN_PASSWORD')
+    if not password:
+        # 未显式提供密码 → 随机生成并打印
+        import secrets as _secrets
+        password = _secrets.token_urlsafe(16)
+
+    admin = User(username=username, is_admin=True)
+    admin.set_password(password)
+    db.session.add(admin)
+    db.session.commit()
+    print(f"[!] 默认管理员已创建: username={username}")
+    if not os.environ.get('ADMIN_PASSWORD'):
+        print(f"[!] 随机密码（请妥善保存）：{password}")

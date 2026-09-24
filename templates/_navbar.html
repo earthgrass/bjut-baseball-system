@@ -1,0 +1,43 @@
+{# 通用导航栏 (Phase D1)
+   所有页面通过 include 引入此 partial；
+   当前路由由 JS 标记 .active 类，无需后端传入 current_path
+   权限感知：未登录显示登录按钮；登录后显示管理菜单与登出 #}
+<nav class="fixed top-0 left-0 right-0 z-50 bg-arena-surface/90 backdrop-blur-md border-b border-arena-red/20">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6">
+        <div class="flex items-center justify-between h-16">
+            <!-- Logo -->
+            <a href="{{ url_for('index') }}" class="flex items-center gap-2 font-heading text-xl tracking-tight">
+                <svg class="w-8 h-8 text-arena-red" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2" />
+                    <line x1="12" y1="22" x2="12" y2="15.5" />
+                    <polyline points="22 8.5 12 15.5 2 8.5" />
+                </svg>
+                <span class="text-white">POWER <span class="text-arena-red">ARENA</span></span>
+            </a>
+
+            <!-- 主导航 -->
+            <div class="hidden lg:flex items-center gap-1">
+                <a href="{{ url_for('index') }}" class="nav-link px-3 py-2 text-sm font-semibold text-gray-300 hover:text-white uppercase tracking-wider transition-colors">首页</a>
+                <a href="{{ url_for('players_page') }}" class="nav-link px-3 py-2 text-sm font-semibold text-gray-300 hover:text-white uppercase tracking-wider transition-colors">球员</a>
+                <a href="{{ url_for('game_stats_page') }}" class="nav-link px-3 py-2 text-sm font-semibold text-gray-300 hover:text-white uppercase tracking-wider transition-colors">比赛</a>
+                <a href="{{ url_for('stats_page') }}" class="nav-link px-3 py-2 text-sm font-semibold text-gray-300 hover:text-white uppercase tracking-wider transition-colors">统计</a>
+                <a href="{{ url_for('matchup_stats_page') }}" class="nav-link px-3 py-2 text-sm font-semibold text-gray-300 hover:text-white uppercase tracking-wider transition-colors">对局</a>
+                <a href="{{ url_for('pdf_viewer_page') }}" class="nav-link px-3 py-2 text-sm font-semibold text-gray-300 hover:text-white uppercase tracking-wider transition-colors">PDF</a>
+            </div>
+
+            <!-- 右侧：管理按钮 / 登录 -->
+            <div class="flex items-center gap-2">
+                {% if current_user.is_authenticated %}
+                    <a href="{{ url_for('add_player_page') }}" class="hidden sm:inline-flex items-center px-3 py-1.5 text-xs font-semibold bg-arena-red text-white uppercase tracking-wider hover:bg-arena-redAccent transition-colors">添加球员</a>
+                    <a href="{{ url_for('add_game_record_page') }}" class="hidden sm:inline-flex items-center px-3 py-1.5 text-xs font-semibold bg-arena-red text-white uppercase tracking-wider hover:bg-arena-redAccent transition-colors">录入记录</a>
+                    <span class="hidden md:inline text-xs text-gray-400 uppercase">{{ current_user.username }}</span>
+                    <form action="{{ url_for('logout') }}" method="post" class="inline">
+                        <button type="submit" class="px-3 py-1.5 text-xs font-semibold border border-arena-red/40 text-gray-300 uppercase tracking-wider hover:bg-arena-red/20 transition-colors">登出</button>
+                    </form>
+                {% else %}
+                    <a href="{{ url_for('login_page') }}" class="px-3 py-1.5 text-xs font-semibold bg-arena-red text-white uppercase tracking-wider hover:bg-arena-redAccent transition-colors">登录</a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</nav>

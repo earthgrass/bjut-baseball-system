@@ -11,5 +11,11 @@ services:
       - ./data:/app/data
     environment:
       - FLASK_APP=app.py
-      - FLASK_ENV=development
+      - FLASK_ENV=production
+      - FLASK_DEBUG=0
+      # 必须设置强随机密钥，否则应用会拒绝启动：
+      #   python -c "import secrets; print(secrets.token_hex(32))"
+      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY environment variable is required}
+      # 首次启动时设为 1 以创建默认管理员账号，之后改为 0
+      - INIT_DEFAULT_ADMIN=0
     restart: unless-stopped
