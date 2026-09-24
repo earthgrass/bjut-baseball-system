@@ -1,96 +1,84 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PDF批量导入 - 棒球队管理系统</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-    <style>
-        .log-box {
-            height: 400px;
-            overflow-y: auto;
-            background: #1e1e1e;
-            color: #d4d4d4;
-            font-family: 'Consolas', monospace;
-            font-size: 0.85rem;
-            padding: 12px;
-            border-radius: 6px;
-            white-space: pre-wrap;
-        }
-        .log-box .log-ok { color: #4ec9b0; }
-        .log-box .log-err { color: #f44747; }
-        .log-box .log-skip { color: #dcdcaa; }
-        .log-box .log-info { color: #569cd6; }
-        .file-item { cursor: pointer; transition: all 0.15s; }
-        .file-item:hover { background: rgba(0,123,255,.1); }
-        .file-item.imported { opacity: .5; }
-        .file-item.imported .status-icon { color: #28a745; }
-    </style>
-</head>
-<body>
-<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-    <div class="container">
-        <a class="navbar-brand" href="/"><i class="fas fa-baseball-ball me-2"></i>棒球队球员管理系统</a>
-        <div class="navbar-nav">
-            <a class="nav-link" href="/"><i class="fas fa-home"></i> 首页</a>
-            <a class="nav-link" href="/pdf_viewer"><i class="fas fa-file-pdf"></i> PDF查看器</a>
-        </div>
-    </div>
-</nav>
+{% extends "base.html" %}
 
-<div class="container mt-4">
-    <h4 class="mb-3"><i class="fas fa-file-import me-2"></i>PDF比赛记录批量导入</h4>
+{% block title %}PDF批量导入 - POWER ARENA{% endblock %}
 
-    <div class="row">
-        <!-- 左侧文件列表 -->
-        <div class="col-md-5">
-            <div class="card">
-                <div class="card-header bg-primary text-white d-flex justify-content-between">
-                    <span><i class="fas fa-list me-1"></i>PDF文件列表</span>
-                    <span id="fileCount">0 个文件</span>
+{% block extra_head %}
+<script src="{{ url_for('static', filename='js/tailwind.config.js') }}"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+    .log-box {
+        height: 400px;
+        overflow-y: auto;
+        background: #1e1e1e;
+        color: #d4d4d4;
+        font-family: 'Consolas', monospace;
+        font-size: 0.85rem;
+        padding: 12px;
+        border-radius: 6px;
+        white-space: pre-wrap;
+    }
+    .log-box .log-ok { color: #4ec9b0; }
+    .log-box .log-err { color: #f44747; }
+    .log-box .log-skip { color: #dcdcaa; }
+    .log-box .log-info { color: #569cd6; }
+    .file-item { cursor: pointer; transition: all 0.15s; }
+    .file-item:hover { background: rgba(230, 0, 0, 0.08); }
+    .file-item.imported { opacity: .5; }
+    .file-item.imported .status-icon { color: #28a745; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto px-4 sm:px-6">
+    <h1 class="font-heading text-2xl sm:text-3xl text-white mb-6">
+        PDF <span class="text-arena-red">批量导入</span>
+    </h1>
+
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <!-- 左侧：PDF文件列表 -->
+        <div class="lg:col-span-5">
+            <div class="mecha-card p-5">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="font-heading text-lg text-white uppercase tracking-wider">PDF 文件列表</h2>
+                    <span id="fileCount" class="text-xs text-gray-400">0 个文件</span>
                 </div>
-                <div class="card-body p-0">
-                    <div id="fileList" style="max-height:440px; overflow-y:auto;">
-                        <div class="text-center py-4 text-muted"><i class="fas fa-spinner fa-spin"></i> 加载中...</div>
-                    </div>
+                <div id="fileList" class="space-y-1 max-h-[440px] overflow-y-auto">
+                    <div class="text-center py-8 text-gray-500 text-sm">加载中...</div>
                 </div>
-                <div class="card-footer">
-                    <button class="btn btn-outline-secondary btn-sm me-2" onclick="previewAll()">
-                        <i class="fas fa-eye"></i> 预览全部
+                <div class="flex gap-2 mt-4 pt-4 border-t border-arena-red/10">
+                    <button class="btn-outline px-4 py-2 text-sm font-semibold text-arena-red hover:text-white transition-colors" onclick="previewAll()">
+                        预览全部
                     </button>
-                    <button class="btn btn-success btn-sm" onclick="importAll(false)">
-                        <i class="fas fa-database"></i> 一键导入全部
+                    <button class="btn-primary px-4 py-2 text-sm font-semibold text-white" onclick="importAll(false)">
+                        一键导入全部
                     </button>
                 </div>
             </div>
         </div>
 
-        <!-- 右侧日志 -->
-        <div class="col-md-7">
-            <div class="card">
-                <div class="card-header bg-dark text-white d-flex justify-content-between">
-                    <span><i class="fas fa-terminal me-1"></i>导入日志</span>
-                    <button class="btn btn-sm btn-outline-light" onclick="clearLog()">清空</button>
+        <!-- 右侧：导入日志 -->
+        <div class="lg:col-span-7">
+            <div class="mecha-card p-5">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="font-heading text-lg text-white uppercase tracking-wider">导入日志</h2>
+                    <button class="text-xs text-gray-400 hover:text-arena-red transition-colors" onclick="clearLog()">清空</button>
                 </div>
-                <div class="card-body p-0">
-                    <div class="log-box" id="logBox">等待操作...</div>
-                </div>
-                <div class="card-footer d-flex justify-content-between">
-                    <div>
-                        <span class="badge bg-success" id="badgeOk">成功: 0</span>
-                        <span class="badge bg-warning text-dark" id="badgeSkip">跳过: 0</span>
-                        <span class="badge bg-danger" id="badgeErr">错误: 0</span>
+                <div class="log-box" id="logBox">等待操作...</div>
+                <div class="flex items-center justify-between mt-4 pt-4 border-t border-arena-red/10">
+                    <div class="flex gap-2">
+                        <span class="badge bg-arena-red/20 text-arena-red px-2 py-1 text-xs font-semibold" id="badgeOk">成功: 0</span>
+                        <span class="badge bg-yellow-500/20 text-yellow-300 px-2 py-1 text-xs font-semibold" id="badgeSkip">跳过: 0</span>
+                        <span class="badge bg-red-700/30 text-red-400 px-2 py-1 text-xs font-semibold" id="badgeErr">错误: 0</span>
                     </div>
-                    <div id="progressText" class="text-muted small"></div>
+                    <div id="progressText" class="text-xs text-gray-500"></div>
                 </div>
             </div>
         </div>
     </div>
 </div>
+{% endblock %}
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+{% block scripts %}
 <script>
 const logBox = document.getElementById('logBox');
 let pdfFiles = [];
@@ -116,36 +104,33 @@ function updateBadges() {
     document.getElementById('badgeErr').textContent = '错误: ' + counters.err;
 }
 
-// 加载PDF文件列表
 async function loadFiles() {
     const res = await fetch('/api/pdf/files');
     pdfFiles = await res.json();
     document.getElementById('fileCount').textContent = pdfFiles.length + ' 个文件';
     const container = document.getElementById('fileList');
     container.innerHTML = '';
-    pdfFiles.forEach((f, i) => {
+    pdfFiles.forEach((f) => {
         const div = document.createElement('div');
-        div.className = 'file-item list-group-item list-group-item-action d-flex justify-content-between align-items-center';
+        div.className = 'file-item flex items-center justify-between px-3 py-2 border border-arena-red/10 rounded';
         div.innerHTML = `
-            <div>
-                <span class="badge bg-secondary year-badge">${f.year}</span>
-                <span class="ms-2">${f.display_name}</span>
+            <div class="flex items-center gap-2 min-w-0">
+                <span class="badge bg-arena-red/20 text-arena-red px-2 py-0.5 text-xs font-semibold flex-shrink-0">${f.year}</span>
+                <span class="text-sm text-gray-300 truncate">${f.display_name}</span>
             </div>
-            <div>
+            <div class="flex items-center gap-2 flex-shrink-0">
                 <span class="status-icon"></span>
-                <small class="text-muted">${f.size}</small>
+                <small class="text-xs text-gray-500">${f.size}</small>
             </div>`;
         div.onclick = () => importOne(f.path, div);
         container.appendChild(div);
     });
 }
 
-// 预览全部（不写入）
 async function previewAll() {
     clearLog();
     log('========== 预览模式 ==========', 'log-info');
     document.getElementById('progressText').textContent = '预览中...';
-
     for (let i = 0; i < pdfFiles.length; i++) {
         const f = pdfFiles[i];
         log(`\n[${i+1}/${pdfFiles.length}] ${f.filename}`, 'log-info');
@@ -177,7 +162,6 @@ async function previewAll() {
     document.getElementById('progressText').textContent = '预览完成';
 }
 
-// 导入单个
 async function importOne(path, el) {
     log('\n导入: ' + path, 'log-info');
     try {
@@ -203,24 +187,20 @@ async function importOne(path, el) {
     updateBadges();
 }
 
-// 导入全部
 async function importAll(dryRun) {
     if (!dryRun && !confirm('确认要导入全部PDF数据到数据库吗？')) return;
     clearLog();
     log('========== 开始批量导入 ==========', 'log-info');
     document.getElementById('progressText').textContent = '导入中...';
-
     for (let i = 0; i < pdfFiles.length; i++) {
         const f = pdfFiles[i];
         log(`\n[${i+1}/${pdfFiles.length}] ${f.filename}`, 'log-info');
         await importOne(f.path, document.querySelectorAll('.file-item')[i]);
     }
-
     log('\n========== 导入完成 ==========', 'log-info');
     document.getElementById('progressText').textContent = '导入完成';
 }
 
 loadFiles();
 </script>
-</body>
-</html>
+{% endblock %}

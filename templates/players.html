@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>球员列表 - POWER ARENA</title>
+        <script src="{{ url_for('static', filename='js/tailwind.config.js') }}"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -371,17 +372,6 @@
             .arena-bg .geo-shape { animation: none !important; }
         }
     </style>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        arena: { bg: '#050505', surface: '#0A0A0A', surface2: '#111111', red: '#E60000', redDark: '#990000', redAccent: '#FF1A1A' }
-                    }
-                }
-            }
-        }
-    </script>
 </head>
 <body class="min-h-screen relative">
 
