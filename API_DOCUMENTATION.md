@@ -23,6 +23,10 @@ docker-compose down
 
 以下使用 `curl` 命令演示，你也可以使用 Postman、Insomnia 或其他 API 测试工具。
 
+> **认证说明**：所有 `POST`/`PUT`/`DELETE` 的写接口需要管理员登录获取 session cookie（`POST /login`）。
+> 登录后浏览器会自动带 cookie；使用 curl 时用 `-c cookies.txt -b cookies.txt` 保存/携带。
+> 所有写接口均通过 `@admin_required` 装饰器保护，未登录返回 302 重定向到 `/login`。
+
 ### 1. 球员管理
 
 #### 获取所有球员
@@ -243,19 +247,11 @@ curl http://localhost:5000/api/export/csv -o players.csv
 
 ---
 
-### 7. 调试接口
+### 7. 调试接口（已删除）
 
-#### 查看所有球员（简化版）
-```bash
-curl http://localhost:5000/api/debug/players
-```
-
-#### 测试更新球员数据
-```bash
-curl -X POST http://localhost:5000/api/test/update_player \
-  -H "Content-Type: application/json" \
-  -d '{"home_runs_batting": 5, "rbi_total": 20}'
-```
+> ⚠️ 以下调试接口已移除以提升安全性，请使用对应的正式接口：
+> - ~~`/api/debug/players`~~ → 用 `/api/players`
+> - ~~`/api/test/update_player`~~ → 用 `PUT /api/players/<id>`（需登录）
 
 ---
 

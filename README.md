@@ -155,37 +155,40 @@ python app.py
 python init_db.py
 ```
 
-## Docker 部署
+## Docker 部署（不再主动维护，仅保留作为回退方案）
 
-### 使用 Docker Compose
+> ⚠️ **2026 年起的部署推荐直接用 Python + systemd / supervisor / Render / Fly.io 等平台。**
+> 本项目的 `Dockerfile` 与 `docker-compose.yml` 仅作为历史回滚保留，未做主动测试。
+
+如确需 Docker 部署（仅参考）：
 
 ```bash
+# 必须先设置 SECRET_KEY 环境变量
+export SECRET_KEY=$(python -c "import secrets; print(secrets.token_hex(32))")
 docker-compose up -d
-```
-
-### 手动构建
-
-```bash
-docker build -t baseball-app .
-docker run -d -p 5000:5000 -v ./instance:/app/instance -v ./data:/app/data baseball-app
 ```
 
 ## 目录结构
 
 ```
 baseball-team-management/
-├── app.py                    # Flask 主入口
-├── database.py               # 数据模型
+├── app.py                    # Flask 主入口（约 1700 行，所有路由）
+├── config.py                 # 配置类（Production/Development/Testing）
+├── database.py               # 数据模型 + 迁移 + 默认管理员
 ├── pdf_parser.py             # PDF 解析模块
 ├── import_pdfs.py            # PDF 批量导入脚本
 ├── init_db.py                # 初始化数据库（含示例数据）
-├── migrate_profiles_sqlite.py # 旧数据库迁移脚本
-├── sync_data.py              # 数据同步工具
 ├── requirements.txt          # Python 依赖
-├── Dockerfile                # Docker 构建文件
+├── Dockerfile                # Docker 构建文件（保留为回退方案）
 ├── docker-compose.yml        # Docker Compose 配置
+├── .env.example              # 环境变量模板
+├── scripts/                  # 一次性使用脚本（dedupe 等）
 ├── templates/                # HTML 模板
+│   ├── base.html             # 公共布局（含 nav/arena 背景）
+│   ├── _navbar.html          # 导航栏 partial
+│   ├── _arena_bg.html        # 装饰背景 partial
 │   ├── index.html            # 首页
+│   ├── login.html            # 登录页
 │   ├── players.html          # 球员列表
 │   ├── add_player.html       # 添加球员
 │   ├── game_stats.html       # 比赛数据
@@ -195,7 +198,12 @@ baseball-team-management/
 │   └── ...
 ├── static/                   # 静态资源
 │   ├── css/
+│   │   └── arena.css         # 合并的全局样式（竞技风）
 │   └── js/
+│       ├── tailwind.config.js  # Tailwind 共享配置
+│       ├── util.js             # 通用工具（showAlert 等）
+│       ├── script.js           # 球员/统计相关（旧版，新版拆分中）
+│       └── ...
 ├── data/                     # PDF 数据文件目录
 │   ├── 2023/
 │   ├── 2024/
@@ -237,21 +245,37 @@ PDF 文件命名格式建议：`队伍A_vs_队伍B_月_日_年.pdf`
 
 ## 安全注意事项
 
-⚠️ **部署到公网前请修改以下配置：**
+⚠️ **部署到公网前请配置以下环境变量：**
 
-1. **SECRET_KEY**：`app.py` 第 63 行的 `'your-secret-key-here'` 需要更换为随机强密钥
-   ```python
-   # 生成随机密钥
-   import secrets
-   app.config['SECRET_KEY'] = secrets.token_hex(32)
-   ```
+复制 `.env.example` 为 `.env` 并填写：
 
-2. **关闭 Debug 模式**：生产环境设置 `debug=False`
-   ```python
-   app.run(debug=False, host='0.0.0.0', port=5000)
-   ```
+```bash
+cp .env.example .env
+# 编辑 .env，至少设置：
+#   SECRET_KEY=<python -c "import secrets; print(secrets.token_hex(32))">
+#   ADMIN_PASSWORD=<首次启动创建的管理员密码>
+```
 
-3. **数据库文件**：`instance/` 目录已加入 `.gitignore`，确保敏感数据不被提交
+关键环境变量：
+
+| 变量 | 必填 | 说明 |
+|------|------|------|
+| `SECRET_KEY` | 生产必填 | Flask session/CSRF 加密密钥；缺失时生产模式拒绝启动 |
+| `FLASK_ENV` | - | `production` / `development` / `testing`（默认 production） |
+| `FLASK_DEBUG` | - | `0` / `1`（默认 0，**生产必须为 0**） |
+| `ADMIN_PASSWORD` | 首次部署 | 首次启动创建默认 admin 账号的密码；缺省则随机生成并打印到 stdout |
+| `INIT_DEFAULT_ADMIN` | 首次部署 | `1` 才会创建默认 admin，**生产部署后必须改为 `0`** |
+| `RATELIMIT_LOGIN` | - | 登录端点速率限制（默认 `5/minute`） |
+| `RATELIMIT_API` | - | API 默认速率限制（默认 `60/minute`） |
+
+**已自动启用的安全机制**：
+
+- CSRF 保护（Flask-WTF，登录表单与所有 `/api/*` 之外的写操作）
+- 登录速率限制（5 次/分钟/ IP）
+- API 速率限制（60 次/分钟/ IP）
+- 路径穿越防护（`_safe_data_path` 用 realpath + commonpath 严格校验）
+- 错误信息脱敏（数据库错误不直接返回前端）
+- 危险调试端点已删除（`/api/debug/*`、`/api/test/*`、`/debug.html`）
 
 ## 公网部署功能影响
 
@@ -276,7 +300,7 @@ docker run -d \
 
 ## 后续优化方向
 
-- [ ] 用户登录与权限管理
+- [x] 用户登录与权限管理
 - [ ] Flask 蓝图拆分重构
 - [ ] 比赛记录编辑功能
 - [ ] 对局信息日期范围筛选
