@@ -126,13 +126,17 @@ def inject_csrf_token():
     return {'csrf_token': generate_csrf}
 
 
-@app.before_request
-def exempt_api_from_csrf():
-    """所有 /api/* JSON 接口不要求 CSRF token（由 admin_required 装饰器兜底保护）"""
-    if request.path.startswith('/api/'):
-        view = app.view_functions.get(request.endpoint)
-        if view:
-            csrf.exempt(view)
+# Phase E0: 移除 Phase B 的 blanket /api/* CSRF 豁免。
+# 所有 mutation API 必须通过 X-CSRFToken header 验证（前端 fetchJson() 自动附加）。
+# @admin_required 装饰器只验证认证，不验证意图——CSRF 防护是另一道防线。
+#
+# 旧 before_request 钩子（已删除）：
+#   @app.before_request
+#   def exempt_api_from_csrf():
+#       if request.path.startswith('/api/'):
+#           view = app.view_functions.get(request.endpoint)
+#           if view:
+#               csrf.exempt(view)
 
 
 @login_manager.user_loader
