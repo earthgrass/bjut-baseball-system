@@ -32,12 +32,69 @@
                     <a href="{{ url_for('add_game_record_page') }}" class="hidden sm:inline-flex items-center px-3 py-1.5 text-xs font-semibold bg-arena-red text-white uppercase tracking-wider hover:bg-arena-redAccent transition-colors">录入记录</a>
                     <span class="hidden md:inline text-xs text-gray-400 uppercase">{{ current_user.username }}</span>
                     <form action="{{ url_for('logout') }}" method="post" class="inline">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <button type="submit" class="px-3 py-1.5 text-xs font-semibold border border-arena-red/40 text-gray-300 uppercase tracking-wider hover:bg-arena-red/20 transition-colors">登出</button>
                     </form>
                 {% else %}
                     <a href="{{ url_for('login_page') }}" class="px-3 py-1.5 text-xs font-semibold bg-arena-red text-white uppercase tracking-wider hover:bg-arena-redAccent transition-colors">登录</a>
                 {% endif %}
+
+                <!-- 移动端菜单按钮（< lg 时显示） -->
+                <button type="button" id="navbar-mobile-btn"
+                        class="lg:hidden inline-flex items-center justify-center w-9 h-9 text-gray-300 hover:text-white transition-colors"
+                        aria-label="打开导航菜单" aria-expanded="false" aria-controls="navbar-mobile-menu">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16"/>
+                    </svg>
+                </button>
             </div>
+        </div>
+
+        <!-- 移动端下拉菜单 -->
+        <div id="navbar-mobile-menu" class="lg:hidden hidden border-t border-arena-red/20 bg-arena-surface/95 backdrop-blur-md">
+            <nav class="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex flex-col gap-1">
+                <a href="{{ url_for('index') }}" class="px-3 py-2.5 text-sm font-semibold text-gray-300 hover:text-white hover:bg-arena-red/10 transition-colors">首页</a>
+                <a href="{{ url_for('players_page') }}" class="px-3 py-2.5 text-sm font-semibold text-gray-300 hover:text-white hover:bg-arena-red/10 transition-colors">球员</a>
+                <a href="{{ url_for('game_stats_page') }}" class="px-3 py-2.5 text-sm font-semibold text-gray-300 hover:text-white hover:bg-arena-red/10 transition-colors">比赛</a>
+                <a href="{{ url_for('stats_page') }}" class="px-3 py-2.5 text-sm font-semibold text-gray-300 hover:text-white hover:bg-arena-red/10 transition-colors">统计</a>
+                <a href="{{ url_for('matchup_stats_page') }}" class="px-3 py-2.5 text-sm font-semibold text-gray-300 hover:text-white hover:bg-arena-red/10 transition-colors">对局</a>
+                <a href="{{ url_for('pdf_viewer_page') }}" class="px-3 py-2.5 text-sm font-semibold text-gray-300 hover:text-white hover:bg-arena-red/10 transition-colors">历年PDF</a>
+                {% if current_user.is_authenticated %}
+                    <a href="{{ url_for('add_player_page') }}" class="px-3 py-2.5 text-sm font-semibold text-arena-red hover:bg-arena-red/10 transition-colors">添加球员</a>
+                    <a href="{{ url_for('add_game_record_page') }}" class="px-3 py-2.5 text-sm font-semibold text-arena-red hover:bg-arena-red/10 transition-colors">录入记录</a>
+                {% endif %}
+            </nav>
         </div>
     </div>
 </nav>
+
+<script>
+(function () {
+    var btn = document.getElementById('navbar-mobile-btn');
+    var menu = document.getElementById('navbar-mobile-menu');
+    if (!btn || !menu) return;
+
+    function setOpen(open) {
+        menu.classList.toggle('hidden', !open);
+        btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        btn.setAttribute('aria-label', open ? '关闭导航菜单' : '打开导航菜单');
+    }
+
+    btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        setOpen(menu.classList.contains('hidden'));
+    });
+
+    // 点击菜单外部关闭
+    document.addEventListener('click', function (e) {
+        if (!menu.classList.contains('hidden') && !menu.contains(e.target)) {
+            setOpen(false);
+        }
+    });
+
+    // Esc 关闭
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') setOpen(false);
+    });
+})();
+</script>

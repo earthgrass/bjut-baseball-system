@@ -161,7 +161,7 @@ async function loadLeaderboards() {
                 <td>${leader.obp?.toFixed(3) || '0.000'}</td>
                 <td>${leader.rbi || 0}</td>
             `;
-            if (index === 0) row.classList.add('table-success');
+            if (index === 0) row.classList.add('bg-arena-red/10');
             battingTable.appendChild(row);
         });
         
@@ -182,7 +182,7 @@ async function loadLeaderboards() {
                 <td>${leader.whip?.toFixed(2) || '0.00'}</td>
                 <td>${leader.strikeouts || 0}</td>
             `;
-            if (index === 0) row.classList.add('table-info');
+            if (index === 0) row.classList.add('bg-arena-red/10');
             pitchingTable.appendChild(row);
         });
         
@@ -200,24 +200,22 @@ async function loadBattingVisualization() {
         
         if (data.image) {
             document.getElementById('battingChart').innerHTML = `
-                <div class="card">
-                    <div class="card-body">
-                        <h6 class="card-title">打击数据统计图表</h6>
-                        <img src="${data.image}" class="img-fluid" alt="打击数据可视化">
-                        <div class="mt-3">
-                            <p><strong>统计摘要:</strong></p>
-                            <ul>
-                                <li>总打击球员数: ${data.total_batters}</li>
-                                <li>平均打击率: ${data.avg_batting_average}</li>
-                                <li>总安打数: ${data.total_hits}</li>
-                            </ul>
-                        </div>
+                <div class="bg-arena-surface border border-arena-red/20 p-5">
+                    <h6 class="font-heading text-white text-lg mb-4">打击数据统计图表</h6>
+                    <img src="${data.image}" class="max-w-full h-auto" alt="打击数据可视化">
+                    <div class="mt-4 text-sm text-gray-400">
+                        <p><strong class="text-white">统计摘要:</strong></p>
+                        <ul class="mt-2 space-y-1">
+                            <li>总打击球员数: ${data.total_batters}</li>
+                            <li>平均打击率: ${data.avg_batting_average}</li>
+                            <li>总安打数: ${data.total_hits}</li>
+                        </ul>
                     </div>
                 </div>
             `;
         } else {
             document.getElementById('battingChart').innerHTML = `
-                <div class="alert alert-warning">
+                <div class="bg-amber-500/10 border border-amber-500/30 p-4 text-amber-200 text-sm">
                     ${data.error || '无法生成图表'}
                 </div>
             `;
@@ -225,7 +223,7 @@ async function loadBattingVisualization() {
     } catch (error) {
         console.error('加载打击图表失败:', error);
         document.getElementById('battingChart').innerHTML = `
-            <div class="alert alert-danger">
+            <div class="bg-red-500/10 border border-red-500/30 p-4 text-red-200 text-sm">
                 加载图表失败: ${error.message}
             </div>
         `;
@@ -240,24 +238,22 @@ async function loadPitchingVisualization() {
         
         if (data.image) {
             document.getElementById('pitchingChart').innerHTML = `
-                <div class="card">
-                    <div class="card-body">
-                        <h6 class="card-title">投手数据统计图表</h6>
-                        <img src="${data.image}" class="img-fluid" alt="投手数据可视化">
-                        <div class="mt-3">
-                            <p><strong>统计摘要:</strong></p>
-                            <ul>
-                                <li>总投手数: ${data.total_pitchers}</li>
-                                <li>平均防御率: ${data.avg_era}</li>
-                                <li>总三振数: ${data.total_strikeouts}</li>
-                            </ul>
-                        </div>
+                <div class="bg-arena-surface border border-arena-red/20 p-5">
+                    <h6 class="font-heading text-white text-lg mb-4">投手数据统计图表</h6>
+                    <img src="${data.image}" class="max-w-full h-auto" alt="投手数据可视化">
+                    <div class="mt-4 text-sm text-gray-400">
+                        <p><strong class="text-white">统计摘要:</strong></p>
+                        <ul class="mt-2 space-y-1">
+                            <li>总投手数: ${data.total_pitchers}</li>
+                            <li>平均防御率: ${data.avg_era}</li>
+                            <li>总三振数: ${data.total_strikeouts}</li>
+                        </ul>
                     </div>
                 </div>
             `;
         } else {
             document.getElementById('pitchingChart').innerHTML = `
-                <div class="alert alert-warning">
+                <div class="bg-amber-500/10 border border-amber-500/30 p-4 text-amber-200 text-sm">
                     ${data.error || '无法生成图表'}
                 </div>
             `;
@@ -265,7 +261,7 @@ async function loadPitchingVisualization() {
     } catch (error) {
         console.error('加载投手图表失败:', error);
         document.getElementById('pitchingChart').innerHTML = `
-            <div class="alert alert-danger">
+            <div class="bg-red-500/10 border border-red-500/30 p-4 text-red-200 text-sm">
                 加载图表失败: ${error.message}
             </div>
         `;
@@ -293,31 +289,7 @@ function getPositionBadgeClass(position) {
     return positionMap[firstPosition] || 'bg-secondary';
 }
 
-// 显示警告信息
-function showAlert(message, type = 'info') {
-    const alertDiv = document.createElement('div');
-    alertDiv.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
-    alertDiv.style.cssText = `
-        top: 20px;
-        right: 20px;
-        z-index: 9999;
-        min-width: 300px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-    `;
-    
-    alertDiv.innerHTML = `
-        ${message}
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-    `;
-    
-    document.body.appendChild(alertDiv);
-    
-    setTimeout(() => {
-        if (alertDiv.parentNode) {
-            alertDiv.remove();
-        }
-    }, 3000);
-}
+// 显示警告信息 —— 统一走 static/js/toast.js 的全局 toast()/showAlert()
 
 // 根据打击率获取徽章颜色
 function getAvgBadgeClass(average) {

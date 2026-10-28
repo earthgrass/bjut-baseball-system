@@ -266,6 +266,7 @@
             .arena-bg .geo-shape { animation: none !important; }
         }
     </style>
+    <meta name="csrf-token" content="{{ csrf_token() }}">
 </head>
 <body class="min-h-screen relative">
 
@@ -316,6 +317,8 @@
                         {% if current_user.is_authenticated %}
                         <span class="text-arena-red text-sm font-semibold">管理员</span>
                         <form method="POST" action="/logout" class="inline">
+
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <button type="submit" class="px-3 py-1.5 text-xs font-semibold text-gray-400 border border-gray-700 hover:border-arena-red hover:text-arena-red transition-colors">
                                 登出
                             </button>
@@ -357,6 +360,8 @@
                         {% if current_user.is_authenticated %}
                         <span class="block px-4 py-2 text-arena-red text-sm font-semibold">管理员: {{ current_user.username }}</span>
                         <form method="POST" action="/logout">
+
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <button type="submit" class="block w-full text-left px-4 py-3 text-gray-400 font-semibold text-sm hover:text-white hover:bg-arena-red/10 transition-colors">登出</button>
                         </form>
                         {% else %}
@@ -383,7 +388,7 @@
 
             <!-- Form -->
             <div class="mecha-card p-8 md:p-10">
-                <form id="addPlayerForm" class="space-y-6">
+                <form id="addPlayerForm" class="space-y-6" onsubmit="addPlayer(); return false;">
                     <!-- Basic Info -->
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div>
@@ -448,7 +453,7 @@
                             </svg>
                             返回列表
                         </a>
-                        <button type="button" class="btn-primary text-white px-8 py-3 font-heading text-sm font-bold inline-flex items-center justify-center gap-2" onclick="addPlayer()">
+                        <button type="submit" class="btn-primary text-white px-8 py-3 font-heading text-sm font-bold inline-flex items-center justify-center gap-2">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
                             </svg>
@@ -477,6 +482,8 @@
             menuBtn.setAttribute('aria-expanded', !isOpen);
         });
     </script>
+    <script src="{{ url_for('static', filename='js/api.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/toast.js') }}"></script>
     <script src="{{ url_for('static', filename='js/script.js') }}"></script>
 </body>
 </html>

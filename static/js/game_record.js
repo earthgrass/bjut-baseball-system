@@ -135,58 +135,28 @@ async function submitGameRecord() {
     }
     
     try {
-        const response = await fetch('/api/game_records', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(recordData)
-        });
-        
-        const result = await response.json();
-        
-        if (response.ok) {
-            showAlert('比赛记录添加成功！', 'success');
-            // 清空表单
-            document.getElementById('gameRecordForm').reset();
-            // 3秒后跳转
-            setTimeout(() => {
-                window.location.href = '/game_stats';
-            }, 1500);
-        } else {
-            showAlert(result.error || '添加失败', 'danger');
-        }
+        // 提交期间禁用按钮，防止重复提交产生重复记录
+        const submitBtn = document.querySelector('#gameRecordForm button[type="submit"]');
+        if (submitBtn) submitBtn.disabled = true;
+
+        await api.post('/api/game_records', recordData);
+
+        showAlert('比赛记录添加成功！', 'success');
+        // 清空表单
+        document.getElementById('gameRecordForm').reset();
+        // 1.5 秒后跳转
+        setTimeout(() => {
+            window.location.href = '/game_stats';
+        }, 1500);
     } catch (error) {
         console.error('添加比赛记录失败:', error);
-        showAlert('网络错误，请稍后重试', 'danger');
+        showAlert(error instanceof ApiError ? error.message : '网络错误，请稍后重试', 'danger');
+        const submitBtn = document.querySelector('#gameRecordForm button[type="submit"]');
+        if (submitBtn) submitBtn.disabled = false;
     }
 }
 
-// 显示警告信息
-function showAlert(message, type = 'info') {
-    const alertDiv = document.createElement('div');
-    alertDiv.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
-    alertDiv.style.cssText = `
-        top: 20px;
-        right: 20px;
-        z-index: 9999;
-        min-width: 300px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-    `;
-    
-    alertDiv.innerHTML = `
-        ${message}
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-    `;
-    
-    document.body.appendChild(alertDiv);
-    
-    setTimeout(() => {
-        if (alertDiv.parentNode) {
-            alertDiv.remove();
-        }
-    }, 3000);
-}
+// 显示警告信息 —— 统一走 static/js/toast.js 的全局 toast()/showAlert()
 
 // 页面加载完成后初始化
 document.addEventListener('DOMContentLoaded', function() {

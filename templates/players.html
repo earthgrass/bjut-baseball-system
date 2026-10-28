@@ -372,6 +372,7 @@
             .arena-bg .geo-shape { animation: none !important; }
         }
     </style>
+    <meta name="csrf-token" content="{{ csrf_token() }}">
 </head>
 <body class="min-h-screen relative">
 
@@ -422,6 +423,8 @@
                         {% if current_user.is_authenticated %}
                         <span class="text-arena-red text-sm font-semibold">管理员</span>
                         <form method="POST" action="/logout" class="inline">
+
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <button type="submit" class="px-3 py-1.5 text-xs font-semibold text-gray-400 border border-gray-700 hover:border-arena-red hover:text-arena-red transition-colors">
                                 登出
                             </button>
@@ -463,6 +466,8 @@
                         {% if current_user.is_authenticated %}
                         <span class="block px-4 py-2 text-arena-red text-sm font-semibold">管理员: {{ current_user.username }}</span>
                         <form method="POST" action="/logout">
+
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <button type="submit" class="block w-full text-left px-4 py-3 text-gray-400 font-semibold text-sm hover:text-white hover:bg-arena-red/10 transition-colors">登出</button>
                         </form>
                         {% else %}
@@ -550,6 +555,8 @@
     </div>
 
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="{{ url_for('static', filename='js/api.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/toast.js') }}"></script>
     <script>
         const isLoggedIn = {% if current_user.is_authenticated %}true{% else %}false{% endif %};
 
@@ -572,42 +579,68 @@
             loadPlayers();
         });
 
+        // 转义 HTML，防止球员名里的特殊字符破坏表格结构或注入脚本
+        function escapeHtml(value) {
+            if (value === null || value === undefined) return '';
+            return String(value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
         function loadPlayers() {
-            $.get('/api/players', function(players) {
-                const tbody = $('#playersTableBody');
-                tbody.empty();
+            api.get('/api/players')
+                .then(function(players) {
+                    const tbody = $('#playersTableBody');
+                    tbody.empty();
 
-                players.forEach((player, index) => {
-                    const avg = player.batting_average ? player.batting_average.toFixed(3) : '.000';
-                    const ops = player.ops ? player.ops.toFixed(3) : '.000';
-                    const hr = player.home_runs_batting || 0;
-                    const rbi = player.rbi_total || 0;
-
-                    let actionHtml = '';
-                    if (isLoggedIn) {
-                        actionHtml = `<div class="flex gap-2">
-                            <button onclick="editPlayer(${player.id})" class="btn-outline text-white px-4 py-1.5 font-heading text-xs font-bold">编辑</button>
-                            <button onclick="deletePlayer(${player.id})" class="btn-primary text-white px-4 py-1.5 font-heading text-xs font-bold">删除</button>
-                        </div>`;
-                    } else {
-                        actionHtml = '<span class="text-gray-500 text-sm">需管理员登录</span>';
+                    if (!players || players.length === 0) {
+                        tbody.append('<tr><td colspan="9" class="text-center text-gray-500 py-8">暂无球员数据</td></tr>');
+                        return;
                     }
 
-                    tbody.append(`
-                        <tr class="hover:bg-arena-red/5 transition-colors">
-                            <td><span class="jersey-number">${player.jersey_number || '00'}</span></td>
-                            <td class="font-semibold text-white">${player.name}</td>
-                            <td>${player.jersey_number || '00'}</td>
-                            <td>${player.primary_position || '未指定'}</td>
-                            <td class="text-arena-red font-bold">${avg}</td>
-                            <td class="font-semibold">${hr}</td>
-                            <td class="font-semibold">${rbi}</td>
-                            <td class="text-arena-red font-bold">${ops}</td>
-                            <td>${actionHtml}</td>
-                        </tr>
-                    `);
+                    players.forEach((player, index) => {
+                        const avg = player.batting_average ? player.batting_average.toFixed(3) : '.000';
+                        const ops = player.ops ? player.ops.toFixed(3) : '.000';
+                        const hr = player.home_runs_batting || 0;
+                        const rbi = player.rbi_total || 0;
+                        const safeName = escapeHtml(player.name);
+                        const safeJersey = escapeHtml(player.jersey_number || '00');
+
+                        let actionHtml = '';
+                        if (isLoggedIn) {
+                            actionHtml = `<div class="flex gap-2">
+                                <button onclick="editPlayer(${player.id})" class="btn-outline text-white px-4 py-1.5 font-heading text-xs font-bold">编辑</button>
+                                <button onclick="deletePlayer(${player.id}, '${safeName}')" class="btn-primary text-white px-4 py-1.5 font-heading text-xs font-bold">删除</button>
+                            </div>`;
+                        } else {
+                            actionHtml = '<span class="text-gray-500 text-sm">需管理员登录</span>';
+                        }
+
+                        tbody.append(`
+                            <tr class="hover:bg-arena-red/5 transition-colors">
+                                <td class="text-gray-500">${index + 1}</td>
+                                <td class="font-semibold text-white">${safeName}</td>
+                                <td><span class="jersey-number">${safeJersey}</span></td>
+                                <td>${escapeHtml(player.primary_position || '未指定')}</td>
+                                <td class="text-arena-red font-bold">${avg}</td>
+                                <td class="font-semibold">${hr}</td>
+                                <td class="font-semibold">${rbi}</td>
+                                <td class="text-arena-red font-bold">${ops}</td>
+                                <td>${actionHtml}</td>
+                            </tr>
+                        `);
+                    });
+                })
+                .catch(function(error) {
+                    const tbody = $('#playersTableBody');
+                    tbody.empty();
+                    tbody.append(`<tr><td colspan="9" class="text-center text-red-400 py-8">
+                        加载失败：${escapeHtml(error && error.message ? error.message : '未知错误')}
+                    </td></tr>`);
                 });
-            });
         }
 
         function editPlayer(id) {
@@ -663,7 +696,7 @@
                 const modal = document.getElementById('editModal');
                 modal.classList.add('show');
             }).fail(function() {
-                alert('获取球员数据失败，请重试。');
+                toast('获取球员数据失败，请重试。', 'error');
             });
         }
 
@@ -689,35 +722,28 @@
                 primary_position: $('#editPrimaryPosition').val()
             };
 
-            $.ajax({
-                url: `/api/players/${id}`,
-                type: 'PUT',
-                contentType: 'application/json',
-                data: JSON.stringify(data),
-                success: function() {
-                    alert('球员信息更新成功！');
+            api.put(`/api/players/${id}`, data)
+                .then(function() {
+                    toast('球员信息更新成功！', 'success');
                     closeEditModal();
                     loadPlayers();
-                },
-                error: function() {
-                    alert('更新失败，请重试。');
-                }
-            });
+                })
+                .catch(function(error) {
+                    toast(error instanceof ApiError ? error.message : '更新失败，请重试。', 'error');
+                });
         }
 
-        function deletePlayer(id) {
-            if (confirm('确定要删除这名球员吗？此操作无法撤销。')) {
-                $.ajax({
-                    url: `/api/players/${id}`,
-                    type: 'DELETE',
-                    success: function() {
-                        alert('球员已删除');
+        function deletePlayer(id, playerName) {
+            const label = playerName ? `「${playerName}」` : '该球员';
+            if (confirm(`确定要删除${label}吗？此操作无法撤销。`)) {
+                api.del(`/api/players/${id}`)
+                    .then(function() {
+                        toast('球员已删除', 'success');
                         loadPlayers();
-                    },
-                    error: function() {
-                        alert('删除失败，请重试。');
-                    }
-                });
+                    })
+                    .catch(function(error) {
+                        toast(error instanceof ApiError ? error.message : '删除失败，请重试。', 'error');
+                    });
             }
         }
 

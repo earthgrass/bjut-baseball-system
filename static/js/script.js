@@ -320,32 +320,24 @@ async function addPlayer() {
     
     try {
         console.log("发送请求到后端...");
-        const response = await fetch('/api/players', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(formData)
-        });
-        
-        console.log("响应状态:", response.status);
-        const result = await response.json();
-        console.log("响应结果:", result);
-        
-        if (response.ok) {
-            showAlert('球员添加成功！', 'success');
-            // 清空表单
-            document.getElementById('addPlayerForm').reset();
-            // 跳转到球员列表
-            setTimeout(() => {
-                window.location.href = '/players';
-            }, 1500);
-        } else {
-            showAlert(result.error || '添加失败', 'danger');
-        }
+        // 提交期间禁用按钮，防止重复提交产生重复记录
+        const submitBtn = document.querySelector('#addPlayerForm button[type="submit"]');
+        if (submitBtn) submitBtn.disabled = true;
+
+        await api.post('/api/players', formData);
+
+        showAlert('球员添加成功！', 'success');
+        // 清空表单
+        document.getElementById('addPlayerForm').reset();
+        // 跳转到球员列表
+        setTimeout(() => {
+            window.location.href = '/players';
+        }, 1500);
     } catch (error) {
         console.error('添加球员失败:', error);
-        showAlert('网络错误，请稍后重试', 'danger');
+        showAlert(error instanceof ApiError ? error.message : '网络错误，请稍后重试', 'danger');
+        const submitBtn = document.querySelector('#addPlayerForm button[type="submit"]');
+        if (submitBtn) submitBtn.disabled = false;
     }
 }
 
@@ -689,8 +681,15 @@ async function editPlayer(playerId) {
     }, 100);
     
     // 显示模态框
+    // 注意：项目已移除 Bootstrap，bootstrap.Modal 不可用。
+    // 本函数属于遗留代码（球员编辑现由 players.html 内联实现），
+    // 这里做防御性处理，避免调用时抛 ReferenceError。
     const editModalElement = document.getElementById('editModal');
     if (editModalElement) {
+        if (typeof bootstrap === 'undefined' || !bootstrap.Modal) {
+            showAlert('该编辑弹窗依赖已移除的 Bootstrap，请在「球员列表」页操作', 'warning');
+            return;
+        }
         const editModal = new bootstrap.Modal(editModalElement);
         editModal.show();
         console.log("模态框已显示");
@@ -852,10 +851,12 @@ async function savePlayerChanges() {
         if (response.ok) {
             showAlert('球员信息更新成功！', 'success');
             
-            // 关闭模态框
-            const modal = bootstrap.Modal.getInstance(document.getElementById('editModal'));
-            if (modal) {
-                modal.hide();
+            // 关闭模态框（Bootstrap 已移除，做防御性处理）
+            if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+                const modal = bootstrap.Modal.getInstance(document.getElementById('editModal'));
+                if (modal) {
+                    modal.hide();
+                }
             }
             
             // 重新加载数据
@@ -904,38 +905,7 @@ async function deletePlayer(playerId, playerName) {
     }
 }
 
-// 显示警告信息
-function showAlert(message, type = 'info') {
-    // 移除现有的警告
-    const existingAlert = document.querySelector('.alert-dismissible');
-    if (existingAlert) {
-        existingAlert.remove();
-    }
-    
-    const alertDiv = document.createElement('div');
-    alertDiv.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
-    alertDiv.style.cssText = `
-        top: 20px;
-        right: 20px;
-        z-index: 9999;
-        min-width: 300px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-    `;
-    
-    alertDiv.innerHTML = `
-        ${message}
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-    `;
-    
-    document.body.appendChild(alertDiv);
-    
-    // 3秒后自动消失
-    setTimeout(() => {
-        if (alertDiv.parentNode) {
-            alertDiv.remove();
-        }
-    }, 3000);
-}
+// 显示警告信息 —— 统一走 static/js/toast.js 的全局 toast()/showAlert()
 
 // 数据可视化
 async function loadVisualization() {

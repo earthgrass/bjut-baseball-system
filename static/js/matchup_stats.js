@@ -210,9 +210,14 @@ function renderBattingTable(records, options) {
             <td>${record.stolen_bases}</td>
             <td><span class="${getAvgClass(record.batting_average)} font-bold">${record.batting_average.toFixed(3)}</span></td>
             ${isLoggedIn ? `<td>
-                <button class="btn-primary text-white px-3 py-1 font-heading text-xs font-bold" onclick="deleteGameRecord(${record.id})">
-                    删除
-                </button>
+                <div class="flex gap-2">
+                    <button class="btn-outline text-white px-3 py-1 font-heading text-xs font-bold" onclick="openEditRecordModal(${record.id})">
+                        编辑
+                    </button>
+                    <button class="btn-primary text-white px-3 py-1 font-heading text-xs font-bold" onclick="deleteGameRecord(${record.id})">
+                        删除
+                    </button>
+                </div>
             </td>` : '<td><span class="text-gray-500 text-sm">需登录</span></td>'}
         `;
         tableBody.appendChild(row);
@@ -259,9 +264,14 @@ function renderPitchingTable(records, options) {
             <td>${record.whip.toFixed(2)}</td>
             <td>${record.result_text}</td>
             ${isLoggedIn ? `<td>
-                <button class="btn-primary text-white px-3 py-1 font-heading text-xs font-bold" onclick="deleteGameRecord(${record.id})">
-                    删除
-                </button>
+                <div class="flex gap-2">
+                    <button class="btn-outline text-white px-3 py-1 font-heading text-xs font-bold" onclick="openEditRecordModal(${record.id})">
+                        编辑
+                    </button>
+                    <button class="btn-primary text-white px-3 py-1 font-heading text-xs font-bold" onclick="deleteGameRecord(${record.id})">
+                        删除
+                    </button>
+                </div>
             </td>` : '<td><span class="text-gray-500 text-sm">需登录</span></td>'}
         `;
         tableBody.appendChild(row);
@@ -413,4 +423,152 @@ function showAlert(message, type = 'info') {
             alertDiv.remove();
         }
     }, 4000);
+}
+// ============================================================================
+// 编辑比赛记录
+// ============================================================================
+// 对局表展示的是汇总视图，编辑需要原始记录，所以先 GET /api/game_records/<id>
+// 取回完整字段，再 PUT 回去。
+
+let editRecordState = null;   // { id, is_pitching }
+
+/** 打开编辑弹窗 */
+async function openEditRecordModal(recordId) {
+    if (!isLoggedIn) {
+        showAlert('请先登录管理员账号', 'error');
+        return;
+    }
+
+    let record;
+    try {
+        record = await api.get('/api/game_records/' + recordId);
+    } catch (error) {
+        showAlert(error instanceof ApiError ? error.message : '获取记录失败', 'error');
+        return;
+    }
+
+    editRecordState = { id: record.id, is_pitching: record.is_pitching };
+
+    // 球员下拉
+    const playerSelect = document.getElementById('editRecordPlayer');
+    playerSelect.innerHTML = '';
+    const players = await api.get('/api/players');
+    players.forEach(function (p) {
+        const opt = document.createElement('option');
+        opt.value = p.id;
+        opt.textContent = p.name + ' #' + (p.jersey_number || '00');
+        if (p.id === record.player_id) opt.selected = true;
+        playerSelect.appendChild(opt);
+    });
+
+    document.getElementById('editRecordDate').value = record.game_date;
+    document.getElementById('editRecordOpponent').value = record.opponent || '';
+
+    // 打击字段
+    const battingFields = {
+        editAtBats: record.at_bats, editRuns: record.runs, editHits: record.hits,
+        editRbi: record.rbi, editWalks: record.walks, editStrikeouts: record.strikeouts,
+        editDoubles: record.doubles, editTriples: record.triples,
+        editHomeRuns: record.home_runs_game, editStolenBases: record.stolen_bases_game,
+        editCaughtStealing: record.caught_stealing, editHitByPitch: record.hit_by_pitch,
+    };
+    Object.keys(battingFields).forEach(function (id) {
+        const el = document.getElementById(id);
+        if (el) el.value = battingFields[id] || 0;
+    });
+
+    // 投球字段
+    const pitchingFields = {
+        editInnings: record.innings_pitched, editHitsAllowed: record.hits_allowed,
+        editRunsAllowed: record.runs_allowed, editEarnedRuns: record.earned_runs,
+        editWalksAllowed: record.walks_allowed, editPitchStrikeouts: record.strikeouts,
+        editHomeRunsAllowed: record.home_runs_allowed, editPitches: record.pitches,
+        editStrikes: record.strikes, editBattersFaced: record.batters_faced,
+    };
+    Object.keys(pitchingFields).forEach(function (id) {
+        const el = document.getElementById(id);
+        if (el) el.value = pitchingFields[id] || 0;
+    });
+    document.getElementById('editWin').checked = !!record.win;
+    document.getElementById('editLoss').checked = !!record.loss;
+    document.getElementById('editSave').checked = !!record.save;
+
+    // 投球字段只在投球记录时显示
+    document.getElementById('editPitchingFields').classList.toggle('hidden', !record.is_pitching);
+    document.getElementById('editBattingFields').classList.toggle('hidden', !!record.is_pitching);
+
+    const modal = document.getElementById('editRecordModal');
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+}
+
+/** 关闭编辑弹窗 */
+function closeEditRecordModal() {
+    const modal = document.getElementById('editRecordModal');
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+    editRecordState = null;
+}
+
+/** 保存修改 */
+async function saveGameRecord() {
+    if (!editRecordState) return;
+
+    const isPitching = editRecordState.is_pitching;
+    const payload = {
+        player_id: parseInt(document.getElementById('editRecordPlayer').value, 10),
+        game_date: document.getElementById('editRecordDate').value,
+        opponent: document.getElementById('editRecordOpponent').value.trim(),
+        is_pitching: isPitching,
+    };
+
+    if (isPitching) {
+        payload.innings_pitched = parseFloat(document.getElementById('editInnings').value) || 0;
+        payload.hits_allowed = parseInt(document.getElementById('editHitsAllowed').value) || 0;
+        payload.runs_allowed = parseInt(document.getElementById('editRunsAllowed').value) || 0;
+        payload.earned_runs = parseInt(document.getElementById('editEarnedRuns').value) || 0;
+        payload.walks_allowed = parseInt(document.getElementById('editWalksAllowed').value) || 0;
+        payload.strikeouts = parseInt(document.getElementById('editPitchStrikeouts').value) || 0;
+        payload.home_runs_allowed = parseInt(document.getElementById('editHomeRunsAllowed').value) || 0;
+        payload.pitches = parseInt(document.getElementById('editPitches').value) || 0;
+        payload.strikes = parseInt(document.getElementById('editStrikes').value) || 0;
+        payload.batters_faced = parseInt(document.getElementById('editBattersFaced').value) || 0;
+        payload.win = document.getElementById('editWin').checked;
+        payload.loss = document.getElementById('editLoss').checked;
+        payload.save = document.getElementById('editSave').checked;
+    } else {
+        payload.at_bats = parseInt(document.getElementById('editAtBats').value) || 0;
+        payload.runs = parseInt(document.getElementById('editRuns').value) || 0;
+        payload.hits = parseInt(document.getElementById('editHits').value) || 0;
+        payload.rbi = parseInt(document.getElementById('editRbi').value) || 0;
+        payload.walks = parseInt(document.getElementById('editWalks').value) || 0;
+        payload.strikeouts = parseInt(document.getElementById('editStrikeouts').value) || 0;
+        payload.doubles = parseInt(document.getElementById('editDoubles').value) || 0;
+        payload.triples = parseInt(document.getElementById('editTriples').value) || 0;
+        payload.home_runs_game = parseInt(document.getElementById('editHomeRuns').value) || 0;
+        payload.stolen_bases_game = parseInt(document.getElementById('editStolenBases').value) || 0;
+        payload.caught_stealing = parseInt(document.getElementById('editCaughtStealing').value) || 0;
+        payload.hit_by_pitch = parseInt(document.getElementById('editHitByPitch').value) || 0;
+    }
+
+    const btn = document.getElementById('editRecordSubmit');
+    btn.disabled = true;
+    try {
+        await api.put('/api/game_records/' + editRecordState.id, payload);
+        showAlert('比赛记录已更新', 'success');
+        closeEditRecordModal();
+        // 刷新当前视图
+        const hasFilters = document.getElementById('playerSelect').value
+            || document.getElementById('opponentSelect').value;
+        if (hasFilters) {
+            await loadMatchupStats();
+        } else {
+            resetFilteredResults();
+            await loadAllGameRecords();
+        }
+    } catch (error) {
+        showAlert(error instanceof ApiError ? error.message : '更新失败，请重试', 'error');
+    } finally {
+        btn.disabled = false;
+    }
 }

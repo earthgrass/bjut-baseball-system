@@ -278,6 +278,7 @@
             .arena-bg .geo-shape { animation: none !important; }
         }
     </style>
+    <meta name="csrf-token" content="{{ csrf_token() }}">
 </head>
 <body class="min-h-screen relative">
 
@@ -328,6 +329,8 @@
                         {% if current_user.is_authenticated %}
                         <span class="text-arena-red text-sm font-semibold">管理员</span>
                         <form method="POST" action="/logout" class="inline">
+
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <button type="submit" class="px-3 py-1.5 text-xs font-semibold text-gray-400 border border-gray-700 hover:border-arena-red hover:text-arena-red transition-colors">
                                 登出
                             </button>
@@ -369,6 +372,8 @@
                         {% if current_user.is_authenticated %}
                         <span class="block px-4 py-2 text-arena-red text-sm font-semibold">管理员: {{ current_user.username }}</span>
                         <form method="POST" action="/logout">
+
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <button type="submit" class="block w-full text-left px-4 py-3 text-gray-400 font-semibold text-sm hover:text-white hover:bg-arena-red/10 transition-colors">登出</button>
                         </form>
                         {% else %}
@@ -637,6 +642,98 @@
             menuBtn.setAttribute('aria-expanded', !isOpen);
         });
     </script>
+    <!-- ===== 编辑比赛记录弹窗 ===== -->
+    <div id="editRecordModal" class="hidden fixed inset-0 z-[60] items-center justify-center p-4">
+        <div class="absolute inset-0 bg-black/70" onclick="closeEditRecordModal()"></div>
+        <div class="relative w-full max-w-3xl max-h-[90vh] overflow-y-auto bg-arena-surface border border-arena-red/30 p-6 md:p-8">
+            <div class="flex items-start justify-between mb-6">
+                <h3 class="font-heading text-xl font-bold text-white">
+                    编辑 <span class="text-arena-red">比赛记录</span>
+                </h3>
+                <button type="button" onclick="closeEditRecordModal()"
+                        class="text-gray-400 hover:text-white text-2xl leading-none" aria-label="关闭">×</button>
+            </div>
+
+            <form id="editRecordForm" onsubmit="saveGameRecord(); return false;" class="space-y-5">
+                <input type="hidden" id="editRecordId">
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                        <label class="form-label" for="editRecordPlayer">球员</label>
+                        <select class="form-input w-full" id="editRecordPlayer" required></select>
+                    </div>
+                    <div>
+                        <label class="form-label" for="editRecordDate">比赛日期</label>
+                        <input type="date" class="form-input w-full" id="editRecordDate" required>
+                    </div>
+                    <div>
+                        <label class="form-label" for="editRecordOpponent">对手</label>
+                        <input type="text" class="form-input w-full" id="editRecordOpponent" list="editOpponentList" required>
+                        <datalist id="editOpponentList"></datalist>
+                    </div>
+                </div>
+
+                <!-- 打击字段 -->
+                <div id="editBattingFields" class="space-y-3">
+                    <p class="text-xs uppercase tracking-wider text-gray-500 font-semibold">打击数据</p>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        <div><label class="form-label" for="editAtBats">打数</label><input type="number" min="0" step="1" class="form-input w-full" id="editAtBats" value="0"></div>
+                        <div><label class="form-label" for="editRuns">得分</label><input type="number" min="0" step="1" class="form-input w-full" id="editRuns" value="0"></div>
+                        <div><label class="form-label" for="editHits">安打</label><input type="number" min="0" step="1" class="form-input w-full" id="editHits" value="0"></div>
+                        <div><label class="form-label" for="editRbi">打点</label><input type="number" min="0" step="1" class="form-input w-full" id="editRbi" value="0"></div>
+                        <div><label class="form-label" for="editWalks">保送</label><input type="number" min="0" step="1" class="form-input w-full" id="editWalks" value="0"></div>
+                        <div><label class="form-label" for="editStrikeouts">三振</label><input type="number" min="0" step="1" class="form-input w-full" id="editStrikeouts" value="0"></div>
+                        <div><label class="form-label" for="editDoubles">二垒打</label><input type="number" min="0" step="1" class="form-input w-full" id="editDoubles" value="0"></div>
+                        <div><label class="form-label" for="editTriples">三垒打</label><input type="number" min="0" step="1" class="form-input w-full" id="editTriples" value="0"></div>
+                        <div><label class="form-label" for="editHomeRuns">本垒打</label><input type="number" min="0" step="1" class="form-input w-full" id="editHomeRuns" value="0"></div>
+                        <div><label class="form-label" for="editStolenBases">盗垒</label><input type="number" min="0" step="1" class="form-input w-full" id="editStolenBases" value="0"></div>
+                        <div><label class="form-label" for="editCaughtStealing">盗垒被杀</label><input type="number" min="0" step="1" class="form-input w-full" id="editCaughtStealing" value="0"></div>
+                        <div><label class="form-label" for="editHitByPitch">触身球</label><input type="number" min="0" step="1" class="form-input w-full" id="editHitByPitch" value="0"></div>
+                    </div>
+                </div>
+
+                <!-- 投球字段 -->
+                <div id="editPitchingFields" class="space-y-3">
+                    <p class="text-xs uppercase tracking-wider text-gray-500 font-semibold">投球数据</p>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        <div><label class="form-label" for="editInnings">局数</label><input type="number" min="0" step="0.1" class="form-input w-full" id="editInnings" value="0"></div>
+                        <div><label class="form-label" for="editHitsAllowed">被安打</label><input type="number" min="0" step="1" class="form-input w-full" id="editHitsAllowed" value="0"></div>
+                        <div><label class="form-label" for="editRunsAllowed">被得分</label><input type="number" min="0" step="1" class="form-input w-full" id="editRunsAllowed" value="0"></div>
+                        <div><label class="form-label" for="editEarnedRuns">自责分</label><input type="number" min="0" step="1" class="form-input w-full" id="editEarnedRuns" value="0"></div>
+                        <div><label class="form-label" for="editWalksAllowed">保送</label><input type="number" min="0" step="1" class="form-input w-full" id="editWalksAllowed" value="0"></div>
+                        <div><label class="form-label" for="editPitchStrikeouts">三振</label><input type="number" min="0" step="1" class="form-input w-full" id="editPitchStrikeouts" value="0"></div>
+                        <div><label class="form-label" for="editHomeRunsAllowed">被本垒打</label><input type="number" min="0" step="1" class="form-input w-full" id="editHomeRunsAllowed" value="0"></div>
+                        <div><label class="form-label" for="editPitches">投球数</label><input type="number" min="0" step="1" class="form-input w-full" id="editPitches" value="0"></div>
+                        <div><label class="form-label" for="editStrikes">好球数</label><input type="number" min="0" step="1" class="form-input w-full" id="editStrikes" value="0"></div>
+                        <div><label class="form-label" for="editBattersFaced">打者数</label><input type="number" min="0" step="1" class="form-input w-full" id="editBattersFaced" value="0"></div>
+                    </div>
+                    <div class="flex flex-wrap gap-4 pt-1">
+                        <label class="flex items-center gap-2 text-sm text-gray-300">
+                            <input type="checkbox" id="editWin" class="accent-arena-red"> 胜投
+                        </label>
+                        <label class="flex items-center gap-2 text-sm text-gray-300">
+                            <input type="checkbox" id="editLoss" class="accent-arena-red"> 败投
+                        </label>
+                        <label class="flex items-center gap-2 text-sm text-gray-300">
+                            <input type="checkbox" id="editSave" class="accent-arena-red"> 救援成功
+                        </label>
+                    </div>
+                </div>
+
+                <div class="flex flex-col sm:flex-row gap-3 justify-end pt-4 border-t border-gray-800">
+                    <button type="button" onclick="closeEditRecordModal()" class="btn-outline text-white px-6 py-2.5 font-heading text-xs font-bold">
+                        取消
+                    </button>
+                    <button type="submit" id="editRecordSubmit" class="btn-primary text-white px-6 py-2.5 font-heading text-xs font-bold">
+                        保存修改
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/api.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/toast.js') }}"></script>
     <script src="{{ url_for('static', filename='js/matchup_stats.js') }}"></script>
 </body>
 </html>

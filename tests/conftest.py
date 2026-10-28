@@ -21,25 +21,54 @@ import pytest
 
 
 def _is_test_safe_path(uri: str) -> bool:
-    """校验 SQLAlchemy URI 是否指向测试安全位置。"""
+    """校验 SQLAlchemy URI 是否指向测试安全位置。
+
+    规则：
+    1. 必须是 sqlite:// URI
+    2. :memory: 直接放行
+    3. 解析出的绝对路径，其目录组件中不能出现 'instance'（真实生产库所在目录）
+    4. 绝对路径必须位于 OS 临时目录或 tests/.tmp/ 之内
+
+    注意：早期实现用子串匹配 '\\tmp\\'（大小写敏感），在 Windows 上临时目录是
+    '...\\AppData\\Local\\Temp\\'，导致合法的临时库被误判为不安全。
+    """
     if not uri:
         return False
-    # 拒绝任何指向 instance/ 或当前工作目录顶级 .db 的路径
-    forbidden = ['instance/', 'instance\\', '/baseball_players.db', '\\baseball_players.db']
-    for f in forbidden:
-        if f in uri.lower():
-            return False
-    # 必须指向临时目录或 tests/.tmp/
-    if not (uri.startswith('sqlite://') and (
-        '/tmp/' in uri or '\\tmp\\' in uri or
-        '/tests/.tmp/' in uri or '\\tests\\.tmp\\' in uri or
-        ':memory:' in uri
-    )):
+    if not uri.lower().startswith('sqlite://'):
         return False
-    return True
+
+    if ':memory:' in uri.lower():
+        return True
+
+    path_part = uri.split('sqlite:///', 1)[-1]
+    if not path_part:
+        return False
+    abs_path = os.path.abspath(path_part)
+
+    # 规则 3：按路径组件判断，避免 'myinstance' 之类的误伤
+    if 'instance' in abs_path.lower().split(os.sep):
+        return False
+
+    # 规则 4：必须落在允许的临时根目录内
+    allowed_roots = [
+        os.path.abspath(tempfile.gettempdir()),
+        os.path.abspath(os.path.join(os.path.dirname(__file__), '.tmp')),
+    ]
+    for root in allowed_roots:
+        try:
+            if os.path.commonpath([root, abs_path]) == root:
+                return True
+        except ValueError:
+            # 不同盘符，commonpath 抛异常 → 该 root 不适用
+            continue
+    return False
 
 
-# 在导入 app 之前，先用临时文件覆盖 SQLALCHEMY_DATABASE_URI
+# 在导入 app 之前，先把数据库指向临时文件
+#
+# 关键点：Flask-SQLAlchemy 在 init_app() 里就 eager 创建 engine，之后再改
+# app.config['SQLALCHEMY_DATABASE_URI'] 不会生效。所以必须通过 DATABASE_FILE
+# 环境变量在 import app 之前指定路径，否则 db.drop_all() 会打在真实生产库上。
 _TMP_DB_DIR = tempfile.mkdtemp(prefix='baseball_test_')
 _TMP_DB_PATH = os.path.join(_TMP_DB_DIR, 'test.db')
 
@@ -49,6 +78,7 @@ os.environ['SECRET_KEY'] = 'test-secret-key-do-not-use-in-prod'
 os.environ['INIT_DEFAULT_ADMIN'] = '1'
 os.environ['ADMIN_USERNAME'] = 'admin'
 os.environ['ADMIN_PASSWORD'] = 'testpass'
+os.environ['DATABASE_FILE'] = _TMP_DB_PATH  # ← 真正的隔离点（必须在 import app 之前）
 
 
 def _real_db_sha256():

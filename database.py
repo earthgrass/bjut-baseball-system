@@ -499,18 +499,9 @@ for _field_name, _default in PITCHER_PROFILE_DEFAULTS.items():
     setattr(Player, _field_name, _build_profile_proxy('pitcher_profile', _field_name, _default, 'ensure_pitcher_profile'))
 
 
-def sync_stats_from_game_records():
-    """
-    从 GameRecord 重新聚合统计数据到 FielderProfile 和 PitcherProfile。
-    作为唯一数据源，确保数据一致性。
-    """
-    from collections import defaultdict
-
-    all_records = GameRecord.query.all()
-    if not all_records:
-        return
-
-    player_stats = defaultdict(lambda: {
+def _new_agg():
+    """空的聚合累加器。字段名与 GameRecord 的列名一一对应。"""
+    return {
         'batting': {
             'at_bats': 0, 'runs': 0, 'hits': 0, 'rbi': 0, 'walks': 0,
             'strikeouts': 0, 'doubles': 0, 'triples': 0, 'home_runs': 0,
@@ -524,89 +515,144 @@ def sync_stats_from_game_records():
             'hit_by_pitch_allowed': 0, 'batters_faced': 0, 'wild_pitches': 0
         },
         'is_pitcher': False,
-    })
+    }
+
+
+def _accumulate_record(agg, record):
+    """把一条 GameRecord 累加进聚合结果（打击/投球靠 is_pitching_record 区分）。"""
+    if record.is_pitching_record:
+        agg['is_pitcher'] = True
+        p = agg['pitching']
+        p['innings_pitched'] += record.innings_pitched or 0
+        p['hits_allowed'] += record.hits_allowed or 0
+        p['runs_allowed'] += record.runs_allowed or 0
+        p['earned_runs'] += record.earned_runs or 0
+        p['walks_allowed'] += record.walks_allowed or 0
+        p['strikeouts'] += record.strikeouts_pitched or 0
+        p['home_runs_allowed'] += record.home_runs_allowed or 0
+        p['pitches'] += record.pitches or 0
+        p['strikes'] += record.strikes or 0
+        p['hit_by_pitch_allowed'] += record.hit_by_pitch_allowed or 0
+        p['batters_faced'] += record.batters_faced or 0
+        p['wild_pitches'] += record.wild_pitches or 0
+    else:
+        b = agg['batting']
+        b['at_bats'] += record.at_bats or 0
+        b['runs'] += record.runs or 0
+        b['hits'] += record.hits or 0
+        b['rbi'] += record.rbi or 0
+        b['walks'] += record.walks or 0
+        b['strikeouts'] += record.strikeouts or 0
+        b['doubles'] += record.doubles or 0
+        b['triples'] += record.triples or 0
+        b['home_runs'] += record.home_runs_batting or 0
+        b['stolen_bases'] += record.stolen_bases or 0
+        b['hit_by_pitch'] += record.hit_by_pitch or 0
+        b['caught_stealing'] += record.caught_stealing or 0
+        b['sacrifice_flys'] += record.sacrifice_flys or 0
+        b['sacrifice_hits'] += record.sacrifice_hits or 0
+    return agg
+
+
+def _apply_agg_to_player(player, agg):
+    """把聚合结果写进该球员的 FielderProfile / PitcherProfile。"""
+    fp = player.ensure_fielder_profile()
+    b = agg['batting']
+    fp.at_bats_total = b['at_bats']
+    fp.runs_total = b['runs']
+    fp.hits_total = b['hits']
+    fp.rbi_total = b['rbi']
+    fp.walks_total = b['walks']
+    fp.strikeouts_batting_total = b['strikeouts']
+    fp.doubles = b['doubles']
+    fp.triples = b['triples']
+    fp.home_runs_batting = b['home_runs']
+    fp.stolen_bases = b['stolen_bases']
+    fp.hit_by_pitch = b['hit_by_pitch']
+    fp.caught_stealing = b['caught_stealing']
+    fp.sacrifice_flys = b['sacrifice_flys']
+    fp.sacrifice_hits = b['sacrifice_hits']
+    fp.update_calculated_fields()
+
+    if agg['is_pitcher']:
+        pp = player.ensure_pitcher_profile()
+        p = agg['pitching']
+        pp.innings_pitched_total = p['innings_pitched']
+        pp.hits_allowed_total = p['hits_allowed']
+        pp.runs_allowed_total = p['runs_allowed']
+        pp.earned_runs_total = p['earned_runs']
+        pp.walks_allowed_total = p['walks_allowed']
+        pp.strikeouts_total = p['strikeouts']
+        pp.home_runs_allowed_total = p['home_runs_allowed']
+        pp.pitches = p['pitches']
+        pp.strikes = p['strikes']
+        pp.hit_by_pitch_allowed = p['hit_by_pitch_allowed']
+        pp.batters_faced = p['batters_faced']
+        pp.wild_pitches = p['wild_pitches']
+        pp.update_calculated_fields()
+    return player
+
+
+def rebuild_player_stats(player_id):
+    """从 game_records 全量重算某名球员的汇总档案。
+
+    这是 profile 的**权威写入口**：增量 +/- 容易漂移（历史上 PUT 端点就是
+    直接覆盖 profile，导致与 game_records 不一致），而重建能保证恒等式
+
+        profile.at_bats_total == SUM(GameRecord.at_bats WHERE player_id=?)
+
+    恒成立，并且能顺手修复历史漂移。
+
+    Args:
+        player_id: 球员 id
+
+    Returns:
+        Player 或 None（球员不存在时）
+    """
+    player = db.session.get(Player, player_id)
+    if not player:
+        return None
+
+    agg = _new_agg()
+    for record in GameRecord.query.filter_by(player_id=player_id).all():
+        _accumulate_record(agg, record)
+
+    return _apply_agg_to_player(player, agg)
+
+
+def rebuild_players_stats(player_ids):
+    """批量重算多名球员的汇总档案（去重后逐个重建）。"""
+    done = []
+    for pid in sorted(set(p for p in player_ids if p)):
+        if rebuild_player_stats(pid) is not None:
+            done.append(pid)
+    return done
+
+
+def sync_stats_from_game_records():
+    """
+    从 GameRecord 重新聚合统计数据到 FielderProfile 和 PitcherProfile。
+    作为唯一数据源，确保数据一致性。
+
+    只处理**有比赛记录**的球员（没有记录的球员档案保持原样）。
+    单个球员的重算请用 rebuild_player_stats()。
+    """
+    from collections import defaultdict
+
+    all_records = GameRecord.query.all()
+    if not all_records:
+        return
+
+    player_stats = defaultdict(_new_agg)
 
     for record in all_records:
-        pid = record.player_id
-        stats = player_stats[pid]
-
-        if record.is_pitching_record:
-            stats['is_pitcher'] = True
-            p = stats['pitching']
-            p['innings_pitched'] += record.innings_pitched or 0
-            p['hits_allowed'] += record.hits_allowed or 0
-            p['runs_allowed'] += record.runs_allowed or 0
-            p['earned_runs'] += record.earned_runs or 0
-            p['walks_allowed'] += record.walks_allowed or 0
-            p['strikeouts'] += record.strikeouts_pitched or 0
-            p['home_runs_allowed'] += record.home_runs_allowed or 0
-            p['pitches'] += record.pitches or 0
-            p['strikes'] += record.strikes or 0
-            p['hit_by_pitch_allowed'] += record.hit_by_pitch_allowed or 0
-            p['batters_faced'] += record.batters_faced or 0
-            p['wild_pitches'] += record.wild_pitches or 0
-        else:
-            b = stats['batting']
-            b['at_bats'] += record.at_bats or 0
-            b['runs'] += record.runs or 0
-            b['hits'] += record.hits or 0
-            b['rbi'] += record.rbi or 0
-            b['walks'] += record.walks or 0
-            b['strikeouts'] += record.strikeouts or 0
-            b['doubles'] += record.doubles or 0
-            b['triples'] += record.triples or 0
-            b['home_runs'] += record.home_runs_batting or 0
-            b['stolen_bases'] += record.stolen_bases or 0
-            b['hit_by_pitch'] += record.hit_by_pitch or 0
-            b['caught_stealing'] += record.caught_stealing or 0
-            b['sacrifice_flys'] += record.sacrifice_flys or 0
-            b['sacrifice_hits'] += record.sacrifice_hits or 0
+        _accumulate_record(player_stats[record.player_id], record)
 
     for player_id, stats in player_stats.items():
         player = db.session.get(Player, player_id)
         if not player:
             continue
-
-        if not player.fielder_profile:
-            player.fielder_profile = FielderProfile()
-
-        fp = player.fielder_profile
-        b = stats['batting']
-        fp.at_bats_total = b['at_bats']
-        fp.runs_total = b['runs']
-        fp.hits_total = b['hits']
-        fp.rbi_total = b['rbi']
-        fp.walks_total = b['walks']
-        fp.strikeouts_batting_total = b['strikeouts']
-        fp.doubles = b['doubles']
-        fp.triples = b['triples']
-        fp.home_runs_batting = b['home_runs']
-        fp.stolen_bases = b['stolen_bases']
-        fp.hit_by_pitch = b['hit_by_pitch']
-        fp.caught_stealing = b['caught_stealing']
-        fp.sacrifice_flys = b['sacrifice_flys']
-        fp.sacrifice_hits = b['sacrifice_hits']
-        fp.update_calculated_fields()
-
-        if stats['is_pitcher']:
-            if not player.pitcher_profile:
-                player.pitcher_profile = PitcherProfile()
-
-            pp = player.pitcher_profile
-            p = stats['pitching']
-            pp.innings_pitched_total = p['innings_pitched']
-            pp.hits_allowed_total = p['hits_allowed']
-            pp.runs_allowed_total = p['runs_allowed']
-            pp.earned_runs_total = p['earned_runs']
-            pp.walks_allowed_total = p['walks_allowed']
-            pp.strikeouts_total = p['strikeouts']
-            pp.home_runs_allowed_total = p['home_runs_allowed']
-            pp.pitches = p['pitches']
-            pp.strikes = p['strikes']
-            pp.hit_by_pitch_allowed = p['hit_by_pitch_allowed']
-            pp.batters_faced = p['batters_faced']
-            pp.wild_pitches = p['wild_pitches']
-            pp.update_calculated_fields()
+        _apply_agg_to_player(player, stats)
 
     db.session.commit()
 

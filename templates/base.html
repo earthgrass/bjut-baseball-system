@@ -23,6 +23,8 @@
         {% block content %}{% endblock %}
     </main>
 
+    <script src="{{ url_for('static', filename='js/api.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/toast.js') }}"></script>
     {% block scripts %}{% endblock %}
 </body>
 </html>

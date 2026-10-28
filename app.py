@@ -26,6 +26,13 @@ except ModuleNotFoundError:
     Migrate = None
 import pandas as pd
 import matplotlib
+
+# 服务端渲染专用：图表只输出 PNG 字节流，从不需要 GUI。
+# Windows 上 matplotlib 默认选 TkAgg，而 WSGI 服务器在 worker 线程里建图，
+# Tk 的清理逻辑会抛出 "Tcl_AsyncDelete: async handler deleted by the wrong thread"
+# 并直接 abort 掉整个进程。必须在 import pyplot 之前切到 Agg。
+matplotlib.use('Agg')
+
 import matplotlib.pyplot as plt
 import seaborn as sns
 import sys
@@ -46,6 +53,8 @@ from database import (
     FielderProfile,
     PitcherProfile,
     User,
+    rebuild_player_stats,
+    rebuild_players_stats,
 )
 from config import get_config
 
@@ -73,7 +82,22 @@ matplotlib.rcParams['axes.unicode_minus'] = False
 
 app = Flask(__name__)
 os.makedirs(app.instance_path, exist_ok=True)
-DATABASE_FILE = os.path.join(app.instance_path, 'baseball_players.db')
+
+# 数据库文件位置：默认 instance/baseball_players.db，可用 DATABASE_FILE 覆盖。
+#   - 绝对路径 → 直接使用（测试隔离、临时库、外部挂载的持久化目录）
+#   - 相对路径 → 相对于 instance/ 解析
+#
+# 为什么必须在 init_app 之前决定：Flask-SQLAlchemy 在 init_app() 里就 eagerly 创建
+# engine，之后再改 app.config['SQLALCHEMY_DATABASE_URI'] 不会生效（官方文档明确写了
+# "Changes to application config after this call will not be reflected"）。
+# 早期版本的 tests/conftest.py 正是在 import 之后才覆盖 URI，导致 db.drop_all()
+# 打在了真实生产库上（Phase E0.5 数据事故）。
+_db_override = os.environ.get('DATABASE_FILE', '').strip()
+if _db_override:
+    DATABASE_FILE = (_db_override if os.path.isabs(_db_override)
+                     else os.path.join(app.instance_path, _db_override))
+else:
+    DATABASE_FILE = os.path.join(app.instance_path, 'baseball_players.db')
 
 # B3: 从 config.py 加载配置（覆盖下面的硬编码 SQLAlchemy 配置）
 _app_config = get_config()
@@ -705,125 +729,302 @@ def get_pitchers():
         })
     return jsonify(result)
 
+# ---------------------------------------------------------------------------
+# 比赛记录写入
+# ---------------------------------------------------------------------------
+# 设计原则（见 docs/DOMAIN_AND_ARCHITECTURE_DESIGN.md）：
+#   GameRecord 是唯一真实源，profile 只是它的聚合缓存。
+#   所以「写」只写 GameRecord，profile 一律用 rebuild_player_stats()
+#   从 game_records 重算 —— 不做增量 +/-，避免历史漂移（老 PUT 端点就是反面教材）。
+
+
+def _parse_game_date(value):
+    """解析 YYYY-MM-DD。失败抛 ValueError，由调用方转成 400。"""
+    if not value:
+        raise ValueError('缺少比赛日期')
+    return datetime.strptime(str(value), '%Y-%m-%d').date()
+
+
+def _apply_game_record_payload(record, data, is_pitching):
+    """把请求体写进比赛记录对象（新增 / 编辑 / 批量共用同一套字段映射）。
+
+    只写 GameRecord 本身，**不动** profile 累计。
+    """
+    if is_pitching:
+        record.innings_pitched = float(data.get('innings_pitched', 0) or 0)
+        record.hits_allowed = int(data.get('hits_allowed', 0) or 0)
+        record.runs_allowed = int(data.get('runs_allowed', 0) or 0)
+        record.earned_runs = int(data.get('earned_runs', 0) or 0)
+        record.walks_allowed = int(data.get('walks_allowed', 0) or 0)
+        record.strikeouts_pitched = int(data.get('strikeouts', 0) or 0)
+        record.home_runs_allowed = int(data.get('home_runs_allowed', 0) or 0)
+        record.win = bool(data.get('win', False))
+        record.loss = bool(data.get('loss', False))
+        record.save = bool(data.get('save', False))
+        record.pitches = int(data.get('pitches', 0) or 0)
+        record.strikes = int(data.get('strikes', 0) or 0)
+        record.hit_by_pitch_allowed = int(data.get('hit_by_pitch_allowed', 0) or 0)
+        record.batters_faced = int(data.get('batters_faced', 0) or 0)
+        record.wild_pitches = int(data.get('wild_pitches', 0) or 0)
+    else:
+        record.at_bats = int(data.get('at_bats', 0) or 0)
+        record.runs = int(data.get('runs', 0) or 0)
+        record.hits = int(data.get('hits', 0) or 0)
+        record.rbi = int(data.get('rbi', 0) or 0)
+        record.walks = int(data.get('walks', 0) or 0)
+        record.strikeouts = int(data.get('strikeouts', 0) or 0)
+        record.doubles = int(data.get('doubles', 0) or 0)
+        record.triples = int(data.get('triples', 0) or 0)
+        record.home_runs_batting = int(data.get('home_runs_game', 0) or 0)
+        record.hit_by_pitch = int(data.get('hit_by_pitch', 0) or 0)
+        record.stolen_bases = int(data.get('stolen_bases_game', 0) or 0)
+        record.caught_stealing = int(data.get('caught_stealing', 0) or 0)
+        record.sacrifice_flys = int(data.get('sacrifice_flys', 0) or 0)
+        record.sacrifice_hits = int(data.get('sacrifice_hits', 0) or 0)
+        # 总垒数 = 一垒安打 + 2*二垒 + 3*三垒 + 4*本垒打
+        singles = record.hits - record.doubles - record.triples - record.home_runs_batting
+        record.total_bases = singles + record.doubles * 2 + record.triples * 3 + record.home_runs_batting * 4
+
+
+def _resolve_player_and_type(player_id, is_pitching):
+    """校验球员与记录类型，返回 (player, error_response)。
+
+    error_response 非 None 时直接返回给调用方。
+    """
+    player = Player.query.get(player_id)
+    if not player:
+        return None, (jsonify({'error': '球员不存在'}), 404)
+    if is_pitching and not player.is_pitcher:
+        return None, (jsonify({'error': '当前球员是场员，不能录入投球记录'}), 400)
+    return player, None
+
+
 @app.route('/api/game_records', methods=['POST'])
 @admin_required
 def add_game_record():
-    """添加比赛记录"""
-    data = request.json
-    player_id = data.get('player_id')
-    is_pitching = data.get('is_pitching', False)
-    
-    player = Player.query.get(player_id)
-    if not player:
-        return jsonify({'error': '球员不存在'}), 404
+    """添加一条比赛记录。
 
-    if is_pitching and not player.is_pitcher:
-        return jsonify({'error': '当前球员是场员，不能录入投球记录'}), 400
-    
+    写入后从 game_records 重算该球员的汇总档案，
+    保证 profile == SUM(game_records) 恒等式成立。
+    """
+    data = request.json or {}
+
     try:
-        # 创建比赛记录
+        player_id = int(data.get('player_id'))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'player_id 无效'}), 400
+
+    is_pitching = bool(data.get('is_pitching', False))
+
+    player, err = _resolve_player_and_type(player_id, is_pitching)
+    if err:
+        return err
+
+    try:
         game_record = GameRecord(
             player_id=player_id,
             opponent=data.get('opponent'),
             is_pitching_record=is_pitching,
-            game_date=datetime.strptime(data.get('game_date'), '%Y-%m-%d').date()
+            game_date=_parse_game_date(data.get('game_date'))
         )
-        
-        if is_pitching:
-            # 投手数据
-            game_record.innings_pitched = float(data.get('innings_pitched', 0))
-            game_record.hits_allowed = int(data.get('hits_allowed', 0))
-            game_record.runs_allowed = int(data.get('runs_allowed', 0))
-            game_record.earned_runs = int(data.get('earned_runs', 0))
-            game_record.walks_allowed = int(data.get('walks_allowed', 0))
-            game_record.strikeouts_pitched = int(data.get('strikeouts', 0))
-            game_record.home_runs_allowed = int(data.get('home_runs_allowed', 0))
-            game_record.win = data.get('win', False)
-            game_record.loss = data.get('loss', False)
-            game_record.save = data.get('save', False)
+        _apply_game_record_payload(game_record, data, is_pitching)
 
-            # 新增投手数据
-            game_record.pitches = int(data.get('pitches', 0))
-            game_record.strikes = int(data.get('strikes', 0))
-            game_record.hit_by_pitch_allowed = int(data.get('hit_by_pitch_allowed', 0))
-            game_record.batters_faced = int(data.get('batters_faced', 0))
-            
-            # 更新球员累计数据
-            player.pitches += game_record.pitches
-            player.strikes += game_record.strikes
-            player.hit_by_pitch_allowed += game_record.hit_by_pitch_allowed
-            player.batters_faced += game_record.batters_faced
-            
-            # 更新球员累计数据
-            player.innings_pitched_total += game_record.innings_pitched
-            player.hits_allowed_total += game_record.hits_allowed
-            player.runs_allowed_total += game_record.runs_allowed
-            player.earned_runs_total += game_record.earned_runs
-            player.walks_allowed_total += game_record.walks_allowed
-            player.strikeouts_total += game_record.strikeouts_pitched
-            player.home_runs_allowed_total += game_record.home_runs_allowed
-        else:
-            # 打击数据
-            game_record.at_bats = int(data.get('at_bats', 0))
-            game_record.runs = int(data.get('runs', 0))
-            game_record.hits = int(data.get('hits', 0))
-            game_record.rbi = int(data.get('rbi', 0))
-            game_record.walks = int(data.get('walks', 0))
-            game_record.strikeouts = int(data.get('strikeouts', 0))
-
-            # 新增打击数据
-            game_record.doubles = int(data.get('doubles', 0))
-            game_record.triples = int(data.get('triples', 0))
-            game_record.home_runs_batting = int(data.get('home_runs_game', 0))
-            game_record.hit_by_pitch = int(data.get('hit_by_pitch', 0))
-            game_record.stolen_bases = int(data.get('stolen_bases_game', 0))
-            game_record.caught_stealing = int(data.get('caught_stealing', 0))
-            game_record.sacrifice_flys = int(data.get('sacrifice_flys', 0))
-            game_record.sacrifice_hits = int(data.get('sacrifice_hits', 0))
-            
-            # 计算总垒数
-            game_record.total_bases = (
-                game_record.hits - game_record.doubles - game_record.triples - 
-                game_record.home_runs_batting +  # 一垒安打数
-                game_record.doubles * 2 +
-                game_record.triples * 3 +
-                game_record.home_runs_batting * 4
-            )
-            
-            # 更新球员累计数据
-            player.doubles += game_record.doubles
-            player.triples += game_record.triples
-            player.home_runs_batting += game_record.home_runs_batting
-            player.hit_by_pitch += game_record.hit_by_pitch
-            player.stolen_bases += game_record.stolen_bases
-            player.caught_stealing += game_record.caught_stealing
-            player.sacrifice_flys += game_record.sacrifice_flys
-            player.sacrifice_hits += game_record.sacrifice_hits
-            player.total_bases += game_record.total_bases
-            
-            # 更新球员累计数据
-            player.at_bats_total += game_record.at_bats
-            player.runs_total += game_record.runs
-            player.hits_total += game_record.hits
-            player.rbi_total += game_record.rbi
-            player.walks_total += game_record.walks
-            player.strikeouts_batting_total += game_record.strikeouts
-        
-        # 更新计算字段
-        player.update_calculated_fields()
-        
         db.session.add(game_record)
+        db.session.flush()
+
+        rebuild_player_stats(player_id)
         db.session.commit()
-        
+
         return jsonify({
             'message': '比赛记录添加成功',
             'record_id': game_record.id,
             'updated_stats': player.to_dict()
         }), 201
-        
+
     except Exception as e:
         db.session.rollback()
         return _safe_error(e)
+
+
+@app.route('/api/game_records/batch', methods=['POST'])
+@admin_required
+def add_game_records_batch():
+    """一次性写入整场比赛的多条记录（打击 + 投球混合）。
+
+    请求体：
+    {
+      "game_date": "2025-11-22",
+      "opponent": "北京科技大学",
+      "records": [
+        {"player_id": 7, "is_pitching": false, "at_bats": 3, "hits": 2, ...},
+        {"player_id": 9, "is_pitching": true,  "innings_pitched": 1.0, ...}
+      ]
+    }
+
+    全有或全无：任何一条不合法就整批回滚。
+    """
+    data = request.json or {}
+    game_date = data.get('game_date')
+    opponent = data.get('opponent')
+    records = data.get('records')
+
+    if not isinstance(records, list) or not records:
+        return jsonify({'error': 'records 不能为空'}), 400
+
+    try:
+        day = _parse_game_date(game_date)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+
+    created = []
+    touched_players = []
+    try:
+        for item in records:
+            if not isinstance(item, dict):
+                raise ValueError('records 里的每一项必须是对象')
+            try:
+                player_id = int(item.get('player_id'))
+            except (TypeError, ValueError):
+                raise ValueError('player_id 无效')
+
+            is_pitching = bool(item.get('is_pitching', False))
+            player, err = _resolve_player_and_type(player_id, is_pitching)
+            if err:
+                # 复用 _resolve_player_and_type 的错误消息
+                raise ValueError(err[0].get_json().get('error'))
+
+            rec = GameRecord(
+                player_id=player_id,
+                opponent=item.get('opponent', opponent),
+                is_pitching_record=is_pitching,
+                game_date=day,
+            )
+            _apply_game_record_payload(rec, item, is_pitching)
+            db.session.add(rec)
+            db.session.flush()
+            created.append(rec.id)
+            touched_players.append(player_id)
+
+        rebuild_players_stats(touched_players)
+        db.session.commit()
+
+    except Exception as e:
+        db.session.rollback()
+        return _safe_error(e)
+
+    return jsonify({
+        'message': '批量导入成功',
+        'created': len(created),
+        'record_ids': created,
+        'game_date': str(day),
+        'opponent': opponent,
+    }), 201
+
+
+@app.route('/api/game_records/<int:record_id>', methods=['GET'])
+def get_game_record(record_id):
+    """获取单条比赛记录（编辑用的原始字段）。
+
+    对局页面展示的是汇总视图，编辑需要这里的完整原始记录。
+    """
+    record = db.session.get(GameRecord, record_id)
+    if not record:
+        return jsonify({'error': '比赛记录不存在'}), 404
+
+    player = Player.query.get(record.player_id)
+    return jsonify({
+        'id': record.id,
+        'player_id': record.player_id,
+        'player_name': player.name if player else None,
+        'game_date': record.game_date.strftime('%Y-%m-%d'),
+        'opponent': record.opponent,
+        'is_pitching': bool(record.is_pitching_record),
+
+        # 打击字段
+        'at_bats': record.at_bats or 0,
+        'runs': record.runs or 0,
+        'hits': record.hits or 0,
+        'rbi': record.rbi or 0,
+        'walks': record.walks or 0,
+        'strikeouts': record.strikeouts or 0,
+        'doubles': record.doubles or 0,
+        'triples': record.triples or 0,
+        'home_runs_game': record.home_runs_batting or 0,
+        'hit_by_pitch': record.hit_by_pitch or 0,
+        'stolen_bases_game': record.stolen_bases or 0,
+        'caught_stealing': record.caught_stealing or 0,
+        'sacrifice_flys': record.sacrifice_flys or 0,
+        'sacrifice_hits': record.sacrifice_hits or 0,
+
+        # 投球字段
+        'innings_pitched': record.innings_pitched or 0,
+        'hits_allowed': record.hits_allowed or 0,
+        'runs_allowed': record.runs_allowed or 0,
+        'earned_runs': record.earned_runs or 0,
+        'walks_allowed': record.walks_allowed or 0,
+        'strikeouts': record.strikeouts_pitched or 0,
+        'home_runs_allowed': record.home_runs_allowed or 0,
+        'pitches': record.pitches or 0,
+        'strikes': record.strikes or 0,
+        'hit_by_pitch_allowed': record.hit_by_pitch_allowed or 0,
+        'batters_faced': record.batters_faced or 0,
+        'wild_pitches': record.wild_pitches or 0,
+        'win': bool(record.win),
+        'loss': bool(record.loss),
+        'save': bool(record.save),
+    })
+
+
+@app.route('/api/game_records/<int:record_id>', methods=['PUT'])
+@admin_required
+def update_game_record(record_id):
+    """编辑一条已有的比赛记录。
+
+    改的是记录本身；统计档案由 game_records 重算（不做增量 +/-）。
+    如果改动了 player_id，旧球员和新球员的档案都会重算。
+    """
+    record = db.session.get(GameRecord, record_id)
+    if not record:
+        return jsonify({'error': '比赛记录不存在'}), 404
+
+    data = request.json or {}
+
+    try:
+        old_player_id = record.player_id
+        new_player_id = int(data.get('player_id', record.player_id))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'player_id 无效'}), 400
+
+    is_pitching = bool(data.get('is_pitching', record.is_pitching_record))
+
+    player, err = _resolve_player_and_type(new_player_id, is_pitching)
+    if err:
+        return err
+
+    try:
+        record.player_id = new_player_id
+        record.opponent = data.get('opponent', record.opponent)
+        record.is_pitching_record = is_pitching
+        record.game_date = _parse_game_date(
+            data.get('game_date', record.game_date.isoformat()))
+        _apply_game_record_payload(record, data, is_pitching)
+
+        db.session.flush()
+
+        # 球员换了的话，两个人的档案都要重算
+        rebuild_players_stats([old_player_id, new_player_id])
+        db.session.commit()
+
+        return jsonify({
+            'message': '比赛记录更新成功',
+            'record_id': record.id,
+            'updated_stats': player.to_dict()
+        })
+
+    except Exception as e:
+        db.session.rollback()
+        return _safe_error(e)
+
 
 @app.route('/api/stats/batting_leaderboard')
 def batting_leaderboard():
@@ -857,14 +1058,30 @@ def batting_leaderboard():
 def pitching_leaderboard():
     """投手排行榜"""
     pitchers = _pitcher_query().join(PitcherProfile).filter(PitcherProfile.innings_pitched_total > 0).all()
-    
+
+    # 战绩（胜/负/救援）只存在于单场 game_records，profile 里没有累计列，
+    # 因此这里从比赛记录实时聚合。win/loss/save 是互斥的布尔标记，
+    # 一次投球最多命中其中一个。
+    wl_counts = {}
+    for rec in GameRecord.query.filter(GameRecord.is_pitching_record.is_(True)).all():
+        w = wl_counts.setdefault(rec.player_id, {'wins': 0, 'losses': 0, 'saves': 0})
+        if rec.win:
+            w['wins'] += 1
+        elif rec.loss:
+            w['losses'] += 1
+        elif rec.save:
+            w['saves'] += 1
+
     leaders = []
     for pitcher in pitchers:
         # 获取位置字符串
         position_display = pitcher.primary_position
         if not position_display and pitcher.positions:
             position_display = pitcher.positions[0].name if pitcher.positions else '未指定'
-        
+
+        wl = wl_counts.get(pitcher.id, {'wins': 0, 'losses': 0, 'saves': 0})
+        decisions = wl['wins'] + wl['losses']
+
         leaders.append({
             'name': pitcher.name,
             'jersey_number': pitcher.jersey_number,
@@ -872,8 +1089,10 @@ def pitching_leaderboard():
             'era': pitcher.era,
             'whip': pitcher.whip,
             'strikeouts': pitcher.strikeouts_total,
-            'wins': 'N/A',  # 需要从比赛记录中计算
-            'losses': 'N/A',
+            'wins': wl['wins'],
+            'losses': wl['losses'],
+            'saves': wl['saves'],
+            'win_pct': round(wl['wins'] / decisions, 3) if decisions else None,
             'innings': pitcher.innings_pitched_total
         })
     
@@ -1491,64 +1710,35 @@ def get_all_game_records():
 @app.route('/api/matchup/game_record/<int:record_id>', methods=['DELETE'])
 @admin_required
 def delete_game_record(record_id):
-    """删除比赛记录"""
-    record = GameRecord.query.get_or_404(record_id)
-    
+    """删除一条比赛记录。
+
+    删除后从 game_records 重算该球员的汇总档案。
+    （旧实现用 max(0, x) 的增量扣减，会把历史统计漂移掩盖掉）
+    """
+    record = db.session.get(GameRecord, record_id)
+    if not record:
+        return jsonify({'error': '比赛记录不存在'}), 404
+
+    player_id = record.player_id
+    player = Player.query.get(player_id)
+    player_name = player.name if player else None
+    opponent = record.opponent
+    game_date = record.game_date.strftime('%Y-%m-%d')
+
     try:
-        # 获取球员信息
-        player = Player.query.get(record.player_id)
-        
-        # 从球员累计数据中减去这场比赛的数据，确保不会出现负数
-        def safe_subtract(current_value, subtract_value, field_name):
-            """安全减法，确保结果不小于0"""
-            result = current_value - subtract_value
-            return max(result, 0)
-        
-        if record.is_pitching_record:
-            # 投手数据
-            player.innings_pitched_total = safe_subtract(player.innings_pitched_total, record.innings_pitched or 0, 'innings_pitched_total')
-            player.hits_allowed_total = safe_subtract(player.hits_allowed_total, record.hits_allowed or 0, 'hits_allowed_total')
-            player.runs_allowed_total = safe_subtract(player.runs_allowed_total, record.runs_allowed or 0, 'runs_allowed_total')
-            player.earned_runs_total = safe_subtract(player.earned_runs_total, record.earned_runs or 0, 'earned_runs_total')
-            player.walks_allowed_total = safe_subtract(player.walks_allowed_total, record.walks_allowed or 0, 'walks_allowed_total')
-            player.strikeouts_total = safe_subtract(player.strikeouts_total, record.strikeouts_pitched or 0, 'strikeouts_total')
-            player.home_runs_allowed_total = safe_subtract(player.home_runs_allowed_total, record.home_runs_allowed or 0, 'home_runs_allowed_total')
-            player.pitches = safe_subtract(player.pitches, record.pitches or 0, 'pitches')
-            player.strikes = safe_subtract(player.strikes, record.strikes or 0, 'strikes')
-            player.hit_by_pitch_allowed = safe_subtract(player.hit_by_pitch_allowed, record.hit_by_pitch_allowed or 0, 'hit_by_pitch_allowed')
-            player.batters_faced = safe_subtract(player.batters_faced, record.batters_faced or 0, 'batters_faced')
-        else:
-            # 打击数据
-            player.at_bats_total = safe_subtract(player.at_bats_total, record.at_bats or 0, 'at_bats_total')
-            player.runs_total = safe_subtract(player.runs_total, record.runs or 0, 'runs_total')
-            player.hits_total = safe_subtract(player.hits_total, record.hits or 0, 'hits_total')
-            player.rbi_total = safe_subtract(player.rbi_total, record.rbi or 0, 'rbi_total')
-            player.walks_total = safe_subtract(player.walks_total, record.walks or 0, 'walks_total')
-            player.strikeouts_batting_total = safe_subtract(player.strikeouts_batting_total, record.strikeouts or 0, 'strikeouts_batting_total')
-            player.doubles = safe_subtract(player.doubles, record.doubles or 0, 'doubles')
-            player.triples = safe_subtract(player.triples, record.triples or 0, 'triples')
-            player.home_runs_batting = safe_subtract(player.home_runs_batting, record.home_runs_batting or 0, 'home_runs_batting')
-            player.stolen_bases = safe_subtract(player.stolen_bases, record.stolen_bases or 0, 'stolen_bases')
-            player.hit_by_pitch = safe_subtract(player.hit_by_pitch, record.hit_by_pitch or 0, 'hit_by_pitch')
-            player.caught_stealing = safe_subtract(player.caught_stealing, record.caught_stealing or 0, 'caught_stealing')
-            player.sacrifice_flys = safe_subtract(player.sacrifice_flys, record.sacrifice_flys or 0, 'sacrifice_flys')
-            player.sacrifice_hits = safe_subtract(player.sacrifice_hits, record.sacrifice_hits or 0, 'sacrifice_hits')
-            player.total_bases = safe_subtract(player.total_bases, record.total_bases or 0, 'total_bases')
-        
-        # 重新计算球员的统计字段
-        player.update_calculated_fields()
-        
-        # 删除比赛记录
         db.session.delete(record)
+        db.session.flush()
+
+        rebuild_player_stats(player_id)
         db.session.commit()
-        
+
         return jsonify({
             'message': '比赛记录删除成功',
-            'player_name': player.name,
-            'opponent': record.opponent,
-            'game_date': record.game_date.strftime('%Y-%m-%d')
+            'player_name': player_name,
+            'opponent': opponent,
+            'game_date': game_date
         })
-        
+
     except Exception as e:
         db.session.rollback()
         return _safe_error(e)

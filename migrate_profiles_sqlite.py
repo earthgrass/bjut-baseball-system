@@ -5,18 +5,40 @@
 2. 创建 fielder_profiles / pitcher_profiles
 3. 把 players 表中的累计数据迁到新档案表
 4. 规范投手/场员的角色与位置
+
+⚠️ 危险警告 —— 请勿在当前数据库上运行本脚本
+------------------------------------------------
+本脚本是一次性历史迁移脚本，**它的工作早已完成**（档案表已建好、数据已搬迁）。
+
+现在 `players` 表里的 legacy 累计列已经被 `migrate_legacy_player_stats()`
+在每次启动时清零（数据真身在 fielder_profiles / pitcher_profiles）。
+因此本脚本若在当前库上再跑一遍，会把**全队所有档案统计覆盖成 0**。
+
+正确做法：需要重建统计请用
+    python scripts/db_forensics.py       # 只读检查
+或直接在应用里触发 `sync_stats_from_game_records()`（从 game_records 重算）。
+
+若确实必须运行本脚本，需显式加 --force-i-know-this-is-destructive。
 """
 
 from __future__ import annotations
 
 import shutil
 import sqlite3
+import sys
 from datetime import datetime
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent
 DB_PATH = ROOT / 'instance' / 'baseball_players.db'
+
+# 安全闸：默认拒绝运行，必须显式加 --force-i-know-this-is-destructive
+if '--force-i-know-this-is-destructive' not in sys.argv:
+    print(__doc__)
+    print('[x] 已阻止执行：本脚本会清零当前数据库的全部统计。')
+    print('    确认要跑请加参数：--force-i-know-this-is-destructive')
+    sys.exit(1)
 
 FIELDER_FIELDS = [
     'at_bats_total', 'runs_total', 'hits_total', 'rbi_total', 'walks_total',

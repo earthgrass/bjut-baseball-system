@@ -1,21 +1,35 @@
 # 棒球队管理系统 API 文档
 
+> 📌 **先读 [`API_CONTRACT.md`](API_CONTRACT.md)** —— 那里是正式的接口契约
+> （认证 / CSRF 规则、响应格式约定、状态码、已知问题、开发约定）。
+> 本文只提供 curl 调用示例。
+
 ## 启动服务
 
-### Docker 方式（推荐）
+### 本地开发（推荐，仅本机可访问）
 
 ```bash
-# 构建并启动
-docker-compose up -d --build
-
-# 查看日志
-docker-compose logs -f
-
-# 停止服务
-docker-compose down
+pip install -r requirements.txt
+cp .env.example .env        # 填入 SECRET_KEY
+python run_local.py         # → http://127.0.0.1:5000
 ```
 
-服务启动后访问：`http://localhost:5000`
+### 服务器部署
+
+```bash
+export SECRET_KEY=$(python -c "import secrets; print(secrets.token_hex(32))")
+export FLASK_ENV=production
+export INIT_DEFAULT_ADMIN=0
+python app.py               # 绑定 0.0.0.0
+```
+
+### Docker（历史回退方案，未做主动测试）
+
+```bash
+docker-compose up -d --build
+docker-compose logs -f
+docker-compose down
+```
 
 ---
 
@@ -26,6 +40,24 @@ docker-compose down
 > **认证说明**：所有 `POST`/`PUT`/`DELETE` 的写接口需要管理员登录获取 session cookie（`POST /login`）。
 > 登录后浏览器会自动带 cookie；使用 curl 时用 `-c cookies.txt -b cookies.txt` 保存/携带。
 > 所有写接口均通过 `@admin_required` 装饰器保护，未登录返回 302 重定向到 `/login`。
+>
+> **CSRF 说明（重要）**：后端全局启用了 `CSRFProtect`，且 `/api/*` 没有豁免。
+> **所有写接口必须额外带 `X-CSRFToken` 请求头**，否则返回 400「The CSRF token is missing」。
+> Token 从任意页面的 `<meta name="csrf-token" content="...">` 取得。
+>
+> ```bash
+> # 取 token 并登录
+> TOKEN=$(curl -s -c cookies.txt http://127.0.0.1:5000/login \
+>         | grep -oP 'name="csrf-token" content="\K[^"]+')
+> curl -b cookies.txt -c cookies.txt -X POST http://127.0.0.1:5000/login \
+>     -d "csrf_token=$TOKEN" -d "username=admin" -d "password=你的密码"
+>
+> # 之后写操作都要带 header
+> curl -b cookies.txt -X POST http://127.0.0.1:5000/api/players \
+>     -H "Content-Type: application/json" \
+>     -H "X-CSRFToken: $TOKEN" \
+>     -d '{"name":"张三","jersey_number":"18","player_type":"fielder","positions":["游击手"],"primary_position":"游击手"}'
+> ```
 
 ### 1. 球员管理
 
