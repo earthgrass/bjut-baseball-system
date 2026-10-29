@@ -1,4 +1,5 @@
 import os
+import re
 import secrets
 import logging
 
@@ -34,22 +35,16 @@ import matplotlib
 matplotlib.use('Agg')
 
 import matplotlib.pyplot as plt
-import seaborn as sns
 import sys
-import io
 from io import BytesIO
 import base64
-import plotly.express as px
-import plotly.io as pio
 from datetime import datetime, timezone
-import json
 
 from database import (
     db,
     init_db,
     Player,
     GameRecord,
-    Position,
     FielderProfile,
     PitcherProfile,
     User,
@@ -134,6 +129,18 @@ else:
 init_db(app)
 migrate = Migrate(app, db) if Migrate else None
 
+# 生产环境的配置体检（审计 #28 / #29）—— 只告警，不阻断启动：
+#   阻断会让「忘了设环境变量」直接变成「服务起不来」，反而更危险。
+if _flask_env == 'production':
+    if not app.config.get('SESSION_COOKIE_SECURE'):
+        logger.warning(
+            'SESSION_COOKIE_SECURE=0 —— 会话 cookie 允许走明文 HTTP。'
+            '走 HTTPS 的公网部署必须在 .env 里设 SESSION_COOKIE_SECURE=1。')
+    if str(app.config.get('RATELIMIT_STORAGE_URI', 'memory://')).startswith('memory://'):
+        logger.warning(
+            '限流使用内存存储：多 worker / 多进程下每个进程各算各的，进程重启即清零。'
+            '多 worker 部署请设 RATELIMIT_STORAGE_URI=redis://<host>:6379。')
+
 # B1: 全局启用 CSRF 保护（API 路由用 @csrf.exempt 单独豁免）
 csrf = CSRFProtect()
 csrf.init_app(app)
@@ -175,7 +182,7 @@ def inject_csrf_token():
 
 @login_manager.user_loader
 def load_user(user_id):
-    return User.query.get(int(user_id))
+    return db.session.get(User, int(user_id))
 
 
 def admin_required(f):
@@ -756,7 +763,7 @@ def _resolve_player_and_type(player_id, is_pitching):
 
     error_response 非 None 时直接返回给调用方。
     """
-    player = Player.query.get(player_id)
+    player = db.session.get(Player, player_id)
     if not player:
         return None, (jsonify({'error': '球员不存在'}), 404)
     if is_pitching and not player.is_pitcher:
@@ -849,8 +856,8 @@ def add_game_records_batch():
                 raise ValueError('records 里的每一项必须是对象')
             try:
                 player_id = int(item.get('player_id'))
-            except (TypeError, ValueError):
-                raise ValueError('player_id 无效')
+            except (TypeError, ValueError) as exc:
+                raise ValueError('player_id 无效') from exc
 
             is_pitching = bool(item.get('is_pitching', False))
             player, err = _resolve_player_and_type(player_id, is_pitching)
@@ -896,7 +903,7 @@ def get_game_record(record_id):
     if not record:
         return jsonify({'error': '比赛记录不存在'}), 404
 
-    player = Player.query.get(record.player_id)
+    player = db.session.get(Player, record.player_id)
     return jsonify({
         'id': record.id,
         'player_id': record.player_id,
@@ -1295,7 +1302,7 @@ def view_pdf(filepath):
             'mime_type': 'application/pdf'
         })
         
-    except Exception as e:
+    except Exception:
         # 不回显异常原文（含服务器绝对路径）；详情写服务端日志
         logger.exception('读取 PDF 文件失败')
         return jsonify({'error': '读取文件失败'}), 500
@@ -1567,7 +1574,7 @@ def search_matchup_records():
     player = None
 
     if player_id:
-        player = Player.query.get(player_id)
+        player = db.session.get(Player, player_id)
         if not player:
             return jsonify({'error': '球员不存在'}), 404
         query = query.filter(GameRecord.player_id == player_id)
@@ -1702,7 +1709,7 @@ def delete_game_record(record_id):
         return jsonify({'error': '比赛记录不存在'}), 404
 
     player_id = record.player_id
-    player = Player.query.get(player_id)
+    player = db.session.get(Player, player_id)
     player_name = player.name if player else None
     opponent = record.opponent
     game_date = record.game_date.strftime('%Y-%m-%d')
@@ -1849,7 +1856,6 @@ def api_upload_pdf():
 
     try:
         from pdf_ingest import parse_pdf
-        from import_pdfs import import_game_record
         parsed = parse_pdf(filepath)
 
         if 'error' in parsed:
@@ -1906,7 +1912,7 @@ def api_upload_pdf():
             'pitching': pitching_preview,
         })
 
-    except Exception as e:
+    except Exception:
         # 不回显异常原文（含服务器绝对路径）；详情写服务端日志
         logger.exception('解析 PDF 失败')
         return jsonify({'error': '解析PDF失败'}), 500

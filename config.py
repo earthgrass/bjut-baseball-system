@@ -19,7 +19,24 @@ class Config:
     # 速率限制
     RATELIMIT_DEFAULT = os.environ.get('RATELIMIT_API', '60/minute')
     RATELIMIT_LOGIN = os.environ.get('RATELIMIT_LOGIN', '5/minute')
+    # ⚠️ `memory://` 的限制（审计 #29）：限流计数存在**进程内存**里 ——
+    #   多 worker / 多进程部署时每个进程各算各的（等效于没限流），
+    #   进程重启即清零。当前部署（python app.py / run.py）是单进程线程模型，
+    #   内存存储够用；一旦上 gunicorn -w 4 或多容器，必须换成共享存储：
+    #       RATELIMIT_STORAGE_URI=redis://host:6379
+    #   注意：limits 5.8 没有 filesystem 后端，只有 memory/redis/memcached/mongodb。
     RATELIMIT_STORAGE_URI = os.environ.get('RATELIMIT_STORAGE_URI', 'memory://')
+
+    # 会话 Cookie（审计 #28）
+    #   HttpOnly —— Flask 默认已是 True；显式写出来是为了让后来人知道它是有意的
+    #   SameSite=Lax —— 默认是 None（偏弱），改成 Lax 挡掉大部分跨站带 cookie
+    #   Secure —— 默认 0：本机开发走 http://127.0.0.1，设成 1 会让浏览器直接丢弃
+    #              session cookie（表现为「登录后立刻掉登录」）。
+    #              **走 HTTPS 的公网部署必须设 SESSION_COOKIE_SECURE=1。**
+    SESSION_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_SAMESITE = os.environ.get('SESSION_COOKIE_SAMESITE', 'Lax')
+    SESSION_COOKIE_SECURE = os.environ.get(
+        'SESSION_COOKIE_SECURE', '0').strip().lower() in ('1', 'true', 'yes', 'on')
 
     # CSRF
     WTF_CSRF_TIME_LIMIT = 60 * 60 * 4  # 4 小时
