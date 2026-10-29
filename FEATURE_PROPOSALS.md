@@ -62,7 +62,7 @@
 - 公式 **4–5 份拷贝**：`database.py:334-418` / `import_pdfs.py:229-234` / `app.py:1203` / `static/js/script.js:1076` / `migrate_profiles_sqlite.py:106-150`
 - 全量重算 **3 份实现**：`database.py:502` / `sync_data.py:23` / `migrate_profiles_sqlite.py:153`
 - "投手"规则 **3 套且冲突**：`migrate_profiles_sqlite.py:200-203` 会把投手的其他位置全删，与 ORM 版相反
-- `PUT /api/players/<id>` 直接覆盖 profile，绕过 GameRecord → 破坏"单一真实源"
+- ~~`PUT /api/players/<id>` 直接覆盖 profile，绕过 GameRecord → 破坏"单一真实源"~~ ✅ **Phase R2 已修**：接口收窄为 metadata-only，统计字段一律 400 拒绝
 - `players` 表 42 列里 36 列是已不映射的 legacy 孤儿列
 - `game_records` / `players` **零索引**（`EXPLAIN` = `SCAN`）；230 行不痛，是 scaling 风险
 

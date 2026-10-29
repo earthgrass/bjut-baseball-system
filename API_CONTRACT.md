@@ -1,7 +1,7 @@
 # API 契约 — POWER ARENA 棒球队管理系统
 
-> 版本：**v1.0**
-> 基线代码：2026-10-28（`app.py` 全部 27 个 API 路由 + 11 个页面路由）
+> 版本：**v1.1**
+> 基线代码：2026-10-29（`app.py` 全部 32 个 API 路由 + 14 个页面路由）
 > 面向对象：**接手继续开发的学弟**
 > 配套文档：[`API_DOCUMENTATION.md`](API_DOCUMENTATION.md)（curl 调用示例）、[`FEATURE_PROPOSALS.md`](FEATURE_PROPOSALS.md)（功能提案）
 
@@ -125,7 +125,7 @@ const created = await api.post('/api/players', { name: '张三', ... });
 | GET | `/api/players` | 公开 | `Player[]` | 全部球员。**每项含 50 个键**：扁平统计字段 + `fielder_profile` + `pitcher_profile` 两个嵌套对象 |
 | POST | `/api/players` | admin | `{message, player}` | 新增。body 见 §3.1 |
 | GET | `/api/players/<id>` | 公开 | `Player` | 单个球员 |
-| PUT | `/api/players/<id>` | admin | `{message, player}` | 更新。**见 §4.1 的已知问题** |
+| PUT | `/api/players/<id>` | admin | `{message, player, ignored_fields}` | 更新**资料**。**只接受 metadata**；提交统计字段 → 400（见 §3.1b） |
 | DELETE | `/api/players/<id>` | admin | `{message, remaining_players}` | 删除。不能删最后一名球员（400） |
 | GET | `/api/players/batters` | 公开 | `对象[]` | 键为中文（打数/安打/…）。**注意：返回全部 27 人，不过滤投手**（见 §4.2） |
 | GET | `/api/players/pitchers` | 公开 | `对象[]` | 键为中文（局数/被安打/…）。**只返回投手**（6 人） |
@@ -267,6 +267,63 @@ curl -X POST http://127.0.0.1:5000/api/players \
 - `positions` 为空 → 400
 - `primary_position` 不在 `positions` 内 → 400
 
+### 3.1b 更新球员资料（只改 metadata）
+
+```bash
+curl -X PUT http://127.0.0.1:5000/api/players/7 \
+  -H "Content-Type: application/json" \
+  -H "X-CSRFToken: $TOKEN" -b cookies.txt \
+  -d '{"name": "张三", "jersey_number": "18",
+       "is_pitcher": false,
+       "positions": ["游击手", "二垒手"],
+       "primary_position": "游击手"}'
+```
+
+**允许的字段**（其余一律视为资料字段之外的键，会被忽略并在 `ignored_fields` 里回报）：
+
+| 字段 | 说明 |
+|---|---|
+| `name` | 姓名 |
+| `jersey_number` | 背号 |
+| `is_pitcher` | 布尔 |
+| `player_type` | `"pitcher"` / `"fielder"`（与 `is_pitcher` 二选一） |
+| `positions` | 守备位置中文名数组 |
+| `primary_position` | 必须在 `positions` 里 |
+
+**统计字段一律拒绝**（400）：
+
+累计数据（打数、安打、局数、ERA、OPS……）是 `game_records` 的派生值，
+**只能通过比赛记录接口写入**。提交统计字段会被直接拒绝，不会静默丢弃：
+
+```json
+{
+  "error": "统计字段不能通过球员接口写入。累计数据只能由比赛记录推导，请改用 POST /api/game_records 或 POST /api/game_records/batch。",
+  "rejected_fields": ["at_bats_total", "hits_total"]
+}
+```
+
+拒绝的字段集合由 `Player` 上的 property proxy 清单推导（`database.py:_build_profile_proxy`），
+以后给档案表加字段，这个接口自动跟着收紧。
+
+> **为什么不是「静默忽略」**：静默忽略会出现「接口返回成功，但数据没进去」的情况 ——
+> 队员以为改了，实际没改。响亮地失败更安全。
+
+> **改 metadata 不会重算统计**：档案是 `game_records` 的派生值，
+> 改资料不产生新记录，因此档案保持原样（恒等式 `profile == SUM(game_records)` 继续成立）。
+
+### 3.1c 批量录入页面
+
+`GET /batch_entry`（admin）—— 粘贴 box score 一次写入整场比赛。
+
+- 打击粘贴框格式：`姓名 AB R H RBI BB SO`，尾部可选 `2B 3B HR HBP SB CS SF SH`
+- 投球粘贴框格式：`姓名 IP H R ER BB SO`，尾部可选 `HR P ST BF WP`
+- 页面在提交前做实时解析 + 逐行校验（姓名是否存在 / 是否投手 / 数值合法性 / 业务不变量），
+  任何一行有问题就阻止提交，**不会静默跳过**
+- 实际写入走 `POST /api/game_records/batch`（§3.2），语义与该端点完全一致
+
+局数（IP）按 box score 上印的**字面数字**入库（中文记法 `.1` = 1/3 局），
+与既有记录同口径 —— 不在 UI 层做换算。
+
 ### 3.2 批量写入整场比赛
 
 一次提交整场比赛（9 名打击手 + 2-3 名投手）：
@@ -354,17 +411,25 @@ curl -X POST http://127.0.0.1:5000/api/game_records \
 
 ## 4. 已知问题（接手前请先读）
 
-### 4.1 `PUT /api/players/<id>` 会直接覆盖累计统计
+### 4.1 ~~`PUT /api/players/<id>` 会直接覆盖累计统计~~ ✅ 已修复（2026-10-29）
 
-它同时改姓名/背号/位置**和** 16 个打击 + 12 个投球累计字段，绕过 `GameRecord`。
+**原问题**：它同时改姓名/背号/位置**和** 16 个打击 + 12 个投球累计字段，绕过 `GameRecord`。
 这破坏了「GameRecord 是唯一真实源」的设计，且下次启动会被
 `sync_stats_from_game_records()` 静默覆盖回去。
 
-**建议**：把 PUT 限制为只改 `name` / `jersey_number` / `positions` / `primary_position`。
-（`docs/DOMAIN_AND_ARCHITECTURE_DESIGN.md` 的 Phase C5 就是这件事。）
+> `Player.at_bats_total` 等是 `database.py:_build_profile_proxy` 生成的 property proxy，
+> 直接读写 `fielder_profiles` / `pitcher_profiles` —— 所以 `setattr` 是**真实写库**，
+> 不是看起来像写库。
 
-> 比赛记录那边已经修好了（`PUT /api/game_records/<id>` 走重建，不覆盖 profile），
-> 球员这边还没改 —— 是目前**唯一**还在直接覆盖 profile 的写入口。
+**现状**：Phase R2 已把该接口收窄为 **metadata-only**，
+提交统计字段一律 400 拒绝（响应带 `rejected_fields`）。
+契约见 **§3.1b**，实现见 `app.py:update_player`。
+
+至此，**所有**统计写入口都收敛到 `game_records` 一条路径：
+`POST /api/game_records`、`POST /api/game_records/batch`、`PUT /api/game_records/<id>`、
+`DELETE /api/matchup/game_record/<id>` —— 四者写完都由 `rebuild_player_stats()` 重算档案。
+
+> 遗留：`import_pdfs.py` 的 PDF 导入仍走 `+=` 增量写 profile（见 §4.3 之后的 backlog）。
 
 ### 4.2 `/api/players/batters` 不过滤投手
 
@@ -387,6 +452,13 @@ curl -X POST http://127.0.0.1:5000/api/game_records \
 | 三振 | `strikeouts`（打击） / `strikeouts_pitched`（投球） | 两侧都叫 `strikeouts` | 靠 `is_pitching` 区分 |
 | 盗垒 | `stolen_bases` | 打击 `stolen_bases_game` | — |
 | 触身球 | `hit_by_pitch` | 打击 `hit_by_pitch` / 投球 `hit_by_pitch_allowed` | 拼写差一个字母，极易传错 |
+
+> ⚠️ **2026-10-29 修**：`GET /api/game_records/<id>` 的响应里 `'strikeouts'` 这个键
+> 曾写了两次（打击一次、投球一次），Python dict 后者覆盖前者 → **打击记录的三振恒返回 0**。
+> 对局页用这个端点回填编辑表单再 PUT 回去，会把打击三振**抹成 0**（生涯三振跟着掉）。
+> 现在按 `is_pitching` 返回对应列，与本表的约定一致。
+> `tests/test_game_record_read_back.py::test_no_duplicate_keys_in_dict_literals`
+> 会在同类问题复发时失败。
 
 ### 4.5 指标口径问题（**别照抄**）
 
@@ -514,6 +586,9 @@ python app.py
 
 | 日期 | 变更 | 影响 |
 |---|---|---|
+| 2026-10-29 | **新增** `GET /batch_entry` 批量录入页面（粘贴 box score 一次写入整场比赛） | 新增能力，写入走既有 `POST /api/game_records/batch` |
+| 2026-10-29 | **修复** `GET /api/game_records/<id>` 的 `'strikeouts'` 重复键（后者覆盖前者） | **破坏性修复**：打击记录的三振曾恒返回 0，导致对局页编辑保存时把打击三振抹成 0。现在按记录类型返回对应列 |
+| 2026-10-29 | **行为变化** `PUT /api/players/<id>` 收窄为 metadata-only | **破坏性**：提交统计字段不再被静默接受，改为 **400 拒绝**并回传 `rejected_fields`。资料字段（name / jersey_number / is_pitcher / player_type / positions / primary_position）不受影响。累计数据改用比赛记录接口写入 |
 | 2026-10-28 | **新增** `PUT /api/game_records/<id>`（编辑）+ 对局页「编辑」按钮与弹窗 | 新增能力，不影响已有调用 |
 | 2026-10-28 | **新增** `POST /api/game_records/batch`（整场一次写入） | 新增能力，全有或全无 |
 | 2026-10-28 | **新增** `GET /api/game_records/<id>`（取原始记录供编辑） | 新增能力 |

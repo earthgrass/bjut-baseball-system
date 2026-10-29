@@ -11,6 +11,7 @@
 ### 核心功能
 - **球员管理**：添加、编辑、删除球员，支持多守备位置与主位置
 - **比赛记录**：录入单场打击/投球数据，自动累计到汇总档案
+- **批量录入**：粘贴 box score 一次写完整场比赛，提交前逐行校验姓名与业务不变量
 - **对局查询**：按球员、对手或「球员 × 对手」组合筛选历史对战数据
 - **数据可视化**：打击率、防御率、排行榜等图表（服务端渲染 PNG）
 - **PDF 导入**：自动解析历年比赛 PDF 并批量导入，支持预览后确认
@@ -22,7 +23,9 @@
 - 服务端图表渲染（matplotlib + seaborn），中文字体自动回退
 - SQLite 单文件数据库，零配置启动
 - CSRF 防护 + 登录/API 双层速率限制 + 路径穿越防护
-- 62 个回归测试，测试库与生产库物理隔离
+- **写入语义单一**：`game_records` 是唯一真实源，统计档案一律从它重算
+  （恒等式 `profile == SUM(game_records)` 永远成立）
+- 96 个 pytest + 25 个 node 单测，测试库与生产库物理隔离
 
 ---
 
@@ -160,6 +163,7 @@ python init_db.py
 | `/add_player` | 添加球员 | 管理员 |
 | `/game_stats` | 比赛数据总览 | 公开 |
 | `/add_game_record` | 添加比赛记录 | 管理员 |
+| `/batch_entry` | 批量录入整场比赛（粘贴 box score） | 管理员 |
 | `/stats` | 综合统计与图表 | 公开 |
 | `/matchup_stats` | 对局信息统计 | 公开 |
 | `/pdf_viewer` | 历年比赛 PDF 查看 | 公开 |
@@ -334,6 +338,23 @@ bjut-baseball-system/
 - 投手可录入打击或投球记录
 - 对手支持选择历史对手或手动输入
 
+### 批量录入整场比赛（`/batch_entry`）
+
+把 box score 直接粘进去，一次写完整场比赛：
+
+```
+打击：姓名 AB R H RBI BB SO   [2B] [3B] [HR] [HBP] [SB] [CS] [SF] [SH]
+投球：姓名 IP H R ER BB SO   [HR] [P] [ST] [BF] [WP]
+```
+
+- 粘贴后**实时解析成预览表**，逐行标 ✓ / 错误原因，确认无误再提交
+- 表头行、`#` 注释行、空行、合计行自动跳过
+- 姓名必须对得上队内球员；投球行必须对应投手
+- 数值非法、负数、`安打 > 打数`、`安打 < 二/三/本垒打之和` → 标红并**阻止提交**
+  （不静默跳过 —— 跳过等于丢数据）
+- 提交走 `POST /api/game_records/batch`，**全有或全无**：任何一条不合法就整批回滚
+- 局数按 box score 上的字面数字填（中文记法 `.1` = 1/3 局），与历史数据同口径
+
 ### 对局信息统计
 - 支持按球员、对手或「球员 × 对手」组合筛选
 - 结果分开展示打击记录和投球记录
@@ -355,8 +376,16 @@ PDF 文件命名格式建议：`队伍A_vs_队伍B_月_日_年.pdf`
 ```bash
 pip install pytest
 python -m pytest tests/ -q
-# 62 passed
+# 96 passed
+
+# 前端解析器的单元测试（需要 node）
+node --test tests/js/batch_entry.test.js
+# 25 passed
 ```
+
+> **测试绝不能碰生产库**。`tests/conftest.py` 用 `DATABASE_FILE` 环境变量
+> 在 `import app` **之前**把数据库指向临时目录，并全程监视生产库的 SHA256。
+> 详见 `docs/PHASE_R0_REPORT.md`（2026-04 数据事故的取证记录）。
 
 ### 测试隔离机制（重要）
 
@@ -450,6 +479,8 @@ Phase E0/E0.5 期间，`tests/conftest.py` 用 `sqlite:///:memory:` 覆盖数据
 | `_is_test_safe_path` 大小写敏感 | Windows 临时目录 `...\AppData\Local\Temp\` 被误判为不安全，49 个测试全部 error | 改为按路径组件 + `commonpath` 校验 |
 | 测试会清空生产库 | 见「数据事故与恢复」 | 根因修复 + SHA256 看门狗 + 路径校验，三重防线 |
 | `.gitignore` 是 UTF-16 编码 | Git 解析失败，**所有忽略规则全部失效**：`.env`（含 SECRET_KEY）、真实数据库、`__pycache__/` 均可被误提交 | 转存为 UTF-8，并补 `recovery/`、`*.db-wal` 等规则 |
+| `PUT /api/players/<id>` 能直接覆盖累计统计 | `Player.at_bats_total` 等是 property proxy，`setattr` **真实写库**，绕过 `game_records` 唯一真源 | 收窄为 **metadata-only**：统计字段一律 400 拒绝（不静默忽略），并删除前端的同款死代码 |
+| `GET /api/game_records/<id>` 的 `'strikeouts'` 重复键 | Python dict 后者覆盖前者 → 打击记录的三振恒返回 0；对局页编辑保存时把打击三振**抹成 0** | 按 `is_pitching` 返回对应列；另加 AST 静态检查防同类 bug 再犯 |
 
 ---
 

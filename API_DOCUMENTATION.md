@@ -79,21 +79,32 @@ curl -X POST http://localhost:5000/api/players \
   }'
 ```
 
-#### 更新球员
+#### 更新球员（只改资料）
+
+> **2026-10-29 起**：该接口**只接受资料字段**。统计字段（`at_bats_total` 等）
+> 会被 **400 拒绝** —— 累计数据是 `game_records` 的派生值，只能通过比赛记录接口写入
+> （`POST /api/game_records` / `POST /api/game_records/batch` / `PUT /api/game_records/<id>`）。
+
 ```bash
 curl -X PUT http://localhost:5000/api/players/1 \
   -H "Content-Type: application/json" \
+  -H "X-CSRFToken: $TOKEN" -b cookies.txt \
   -d '{
     "name": "张三",
     "jersey_number": "18",
     "is_pitcher": true,
     "positions": ["投手"],
-    "primary_position": "投手",
-    "at_bats_total": 50,
-    "hits_total": 15,
-    "home_runs_batting": 3,
-    "rbi_total": 10
+    "primary_position": "投手"
   }'
+```
+
+提交统计字段会得到：
+
+```json
+{
+  "error": "统计字段不能通过球员接口写入。累计数据只能由比赛记录推导，请改用 POST /api/game_records 或 POST /api/game_records/batch。",
+  "rejected_fields": ["at_bats_total"]
+}
 ```
 
 #### 删除球员
