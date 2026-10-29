@@ -903,7 +903,11 @@ def get_game_record(record_id):
         'hits': record.hits or 0,
         'rbi': record.rbi or 0,
         'walks': record.walks or 0,
-        'strikeouts': record.strikeouts or 0,
+        # 三振：打击与投球共用同一个 JSON 键（PUT 端点也按 is_pitching 决定写哪一列）。
+        # 必须按记录类型取对应的那一列 —— 否则打击记录的三振会返回投球列的 0，
+        # 前端回填编辑表单再 PUT 回去时，就把打击三振抹成了 0。
+        'strikeouts': (record.strikeouts_pitched if record.is_pitching_record
+                       else record.strikeouts) or 0,
         'doubles': record.doubles or 0,
         'triples': record.triples or 0,
         'home_runs_game': record.home_runs_batting or 0,
@@ -919,7 +923,7 @@ def get_game_record(record_id):
         'runs_allowed': record.runs_allowed or 0,
         'earned_runs': record.earned_runs or 0,
         'walks_allowed': record.walks_allowed or 0,
-        'strikeouts': record.strikeouts_pitched or 0,
+        # 注意：三振的键 'strikeouts' 已在上面给出（按记录类型取对应列），这里不再重复。
         'home_runs_allowed': record.home_runs_allowed or 0,
         'pitches': record.pitches or 0,
         'strikes': record.strikes or 0,
