@@ -1198,6 +1198,17 @@ def add_game_record_page():
     players = Player.query.all()
     return render_template('add_game_record.html', players=players)
 
+
+@app.route('/batch_entry')
+@admin_required
+def batch_entry_page():
+    """批量录入整场比赛的页面。
+
+    后端写入走 POST /api/game_records/batch（整场一次写入，全有或全无），
+    本页只负责把 box score 解析成结构化记录并逐行校验。
+    """
+    return render_template('batch_entry.html')
+
 @app.route('/pdf_viewer')
 def pdf_viewer_page():
     """PDF查看器页面"""

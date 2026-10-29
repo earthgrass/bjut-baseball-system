@@ -30,6 +30,7 @@
                 {% if current_user.is_authenticated %}
                     <a href="{{ url_for('add_player_page') }}" class="hidden sm:inline-flex items-center px-3 py-1.5 text-xs font-semibold bg-arena-red text-white uppercase tracking-wider hover:bg-arena-redAccent transition-colors">添加球员</a>
                     <a href="{{ url_for('add_game_record_page') }}" class="hidden sm:inline-flex items-center px-3 py-1.5 text-xs font-semibold bg-arena-red text-white uppercase tracking-wider hover:bg-arena-redAccent transition-colors">录入记录</a>
+                    <a href="{{ url_for('batch_entry_page') }}" class="hidden sm:inline-flex items-center px-3 py-1.5 text-xs font-semibold bg-arena-red text-white uppercase tracking-wider hover:bg-arena-redAccent transition-colors">批量录入</a>
                     <span class="hidden md:inline text-xs text-gray-400 uppercase">{{ current_user.username }}</span>
                     <form action="{{ url_for('logout') }}" method="post" class="inline">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -62,6 +63,7 @@
                 {% if current_user.is_authenticated %}
                     <a href="{{ url_for('add_player_page') }}" class="px-3 py-2.5 text-sm font-semibold text-arena-red hover:bg-arena-red/10 transition-colors">添加球员</a>
                     <a href="{{ url_for('add_game_record_page') }}" class="px-3 py-2.5 text-sm font-semibold text-arena-red hover:bg-arena-red/10 transition-colors">录入记录</a>
+                    <a href="{{ url_for('batch_entry_page') }}" class="px-3 py-2.5 text-sm font-semibold text-arena-red hover:bg-arena-red/10 transition-colors">批量录入</a>
                 {% endif %}
             </nav>
         </div>

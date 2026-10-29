@@ -1,0 +1,238 @@
+{% extends 'base.html' %}
+
+{% block title %}批量录入 - POWER ARENA{% endblock %}
+
+{% block extra_head %}
+<style>
+    /* ── 表单控件 ──────────────────────────────────────────────
+       与 templates/players.html / add_game_record.html 保持一致的写法：
+       arena.css 只放全局组件类，表单类各页自行定义。 */
+    .form-input {
+        background: rgba(10, 10, 10, 0.8);
+        border: 1px solid rgba(230, 0, 0, 0.2);
+        color: #FFFFFF;
+        padding: 0.75rem 1rem;
+        transition: all 0.3s ease;
+        clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+    }
+
+    .form-input:focus {
+        outline: none;
+        border-color: #E60000;
+        box-shadow: 0 0 15px rgba(230, 0, 0, 0.3);
+    }
+
+    .form-input::placeholder { color: #6B7280; }
+
+    .form-label {
+        color: #9CA3AF;
+        font-size: 0.875rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-bottom: 0.5rem;
+        display: block;
+    }
+
+    /* 粘贴框：等宽字体，方便对齐 box score 的列 */
+    .paste-area {
+        background: rgba(10, 10, 10, 0.8);
+        border: 1px solid rgba(230, 0, 0, 0.2);
+        color: #FFFFFF;
+        padding: 1rem;
+        width: 100%;
+        font-family: 'Chakra Petch', 'Consolas', monospace;
+        font-size: 0.9375rem;
+        line-height: 1.7;
+        resize: vertical;
+        min-height: 140px;
+        transition: all 0.3s ease;
+        clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+    }
+
+    .paste-area:focus {
+        outline: none;
+        border-color: #E60000;
+        box-shadow: 0 0 15px rgba(230, 0, 0, 0.3);
+    }
+
+    .paste-area::placeholder { color: #6B7280; }
+
+    /* 预览表 */
+    .preview-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.875rem;
+    }
+
+    .preview-table th {
+        text-align: left;
+        color: #9CA3AF;
+        font-weight: 600;
+        font-size: 0.6875rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        padding: 0.5rem 0.75rem;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        white-space: nowrap;
+    }
+
+    .preview-table td {
+        padding: 0.5rem 0.75rem;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        color: #E5E7EB;
+        white-space: nowrap;
+    }
+
+    .preview-table tbody tr:last-child td { border-bottom: none; }
+    .preview-table tbody tr.row-error td { background: rgba(239, 68, 68, 0.08); color: #FCA5A5; }
+    .preview-table tbody tr.row-ok td { color: #D1D5DB; }
+
+    .row-msg-error { color: #F87171; font-size: 0.8125rem; white-space: normal; }
+    .row-msg-ok { color: #4ADE80; }
+
+    .legend-box {
+        background: rgba(255, 255, 255, 0.03);
+        border-left: 2px solid rgba(230, 0, 0, 0.4);
+        padding: 0.75rem 1rem;
+        font-size: 0.8125rem;
+        color: #9CA3AF;
+        line-height: 1.8;
+    }
+
+    .legend-box code {
+        color: #FCA5A5;
+        background: rgba(230, 0, 0, 0.1);
+        padding: 0.05rem 0.35rem;
+        font-family: 'Consolas', monospace;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto px-4 sm:px-6 py-10">
+
+    <!-- 标题 -->
+    <div class="text-center mb-8">
+        <p class="text-arena-red text-xs font-bold tracking-[0.4em] uppercase mb-3">Batch Entry</p>
+        <h1 class="font-heading text-4xl md:text-5xl font-black italic tracking-tighter mb-4">
+            批量 <span class="text-arena-red">录入</span>
+        </h1>
+        <p class="text-gray-400 text-sm max-w-2xl mx-auto">
+            一场比赛一次写完。粘贴 box score，系统自动对齐球员并逐行校验，
+            确认无误后整场提交 —— 全有或全无，任何一行不合法就整批不写。
+        </p>
+    </div>
+
+    <div class="section-divider max-w-6xl mx-auto mb-8" aria-hidden="true"></div>
+
+    <form id="batchForm" class="space-y-8" onsubmit="submitBatch(); return false;">
+
+        <!-- 比赛信息 -->
+        <div class="mecha-card p-6 md:p-8">
+            <h2 class="font-heading text-lg font-bold text-white mb-6">比赛信息</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <label class="form-label" for="batchGameDate">比赛日期 *</label>
+                    <input type="date" class="form-input w-full" id="batchGameDate" required>
+                </div>
+                <div>
+                    <label class="form-label" for="batchOpponent">对手球队 *</label>
+                    <input type="text" class="form-input w-full" id="batchOpponent"
+                           list="opponentsList" required placeholder="选择或输入对手名称">
+                    <datalist id="opponentsList"></datalist>
+                    <p class="text-gray-500 text-sm mt-2">可以直接选择历史对手，也可以手动输入新对手。</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 打击数据 -->
+        <div class="mecha-card p-6 md:p-8">
+            <h2 class="font-heading text-lg font-bold text-white mb-2">打击数据</h2>
+            <p class="text-gray-500 text-sm mb-4">每行一名球员。左侧姓名必须是队内球员姓名。</p>
+
+            <div class="legend-box mb-4">
+                格式：<code>姓名 AB R H RBI BB SO</code>
+                后面可追加（可选，按顺序）：<code>2B 3B HR HBP SB CS SF SH</code><br>
+                表头行、<code>#</code> 开头的注释行、空行会自动跳过。
+            </div>
+
+            <label class="form-label" for="battingInput">粘贴打击数据</label>
+            <textarea class="paste-area" id="battingInput" spellcheck="false"
+                      placeholder="姓名    AB  R  H  RBI  BB  SO&#10;于凯泽   4   1  2   1   0   1&#10;仇志豪   3   0  1   0   1   0"></textarea>
+
+            <div class="mt-5">
+                <div class="flex items-center justify-between mb-2">
+                    <span class="form-label mb-0">解析预览</span>
+                    <span id="battingSummary" class="text-sm text-gray-400">尚未解析</span>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="preview-table">
+                        <thead>
+                            <tr>
+                                <th>姓名</th><th>AB</th><th>R</th><th>H</th><th>RBI</th>
+                                <th>BB</th><th>SO</th><th>额外</th><th>状态</th>
+                            </tr>
+                        </thead>
+                        <tbody id="battingPreview"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- 投球数据 -->
+        <div class="mecha-card p-6 md:p-8">
+            <h2 class="font-heading text-lg font-bold text-white mb-2">投球数据</h2>
+            <p class="text-gray-500 text-sm mb-4">每行一名投手。局数按 box score 原样填写即可。</p>
+
+            <div class="legend-box mb-4">
+                格式：<code>姓名 IP H R ER BB SO</code>
+                后面可追加（可选，按顺序）：<code>HR P ST BF WP</code><br>
+                IP 为投球局数（可带小数，如 <code>3</code> / <code>3.1</code>），H 为被安打，R 为被得分，ER 为自责分。
+            </div>
+
+            <label class="form-label" for="pitchingInput">粘贴投球数据</label>
+            <textarea class="paste-area" id="pitchingInput" spellcheck="false"
+                      placeholder="姓名    IP   H  R  ER  BB  SO&#10;韩登越  3.0   4  1   1   2   5&#10;白云箫  1.1   3  5   5   3   2"></textarea>
+
+            <div class="mt-5">
+                <div class="flex items-center justify-between mb-2">
+                    <span class="form-label mb-0">解析预览</span>
+                    <span id="pitchingSummary" class="text-sm text-gray-400">尚未解析</span>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="preview-table">
+                        <thead>
+                            <tr>
+                                <th>姓名</th><th>IP</th><th>H</th><th>R</th><th>ER</th>
+                                <th>BB</th><th>SO</th><th>额外</th><th>状态</th>
+                            </tr>
+                        </thead>
+                        <tbody id="pitchingPreview"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- 提交 -->
+        <div class="mecha-card p-6 md:p-8">
+            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                <p id="batchHint" class="text-gray-400 text-sm">
+                    填好日期和对手后，把打击/投球数据粘贴进来即可提交。
+                </p>
+                <div class="flex gap-3">
+                    <button type="button" class="btn-outline text-white px-6 py-2.5 font-heading text-sm font-bold"
+                            onclick="resetBatchForm()">清空</button>
+                    <button type="submit" id="batchSubmitBtn" class="btn-primary text-white px-8 py-2.5 font-heading text-sm font-bold"
+                            disabled>提交本场数据</button>
+                </div>
+            </div>
+        </div>
+
+    </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/batch_entry.js') }}"></script>
+{% endblock %}
