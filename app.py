@@ -55,6 +55,8 @@ from database import (
     User,
     rebuild_player_stats,
     rebuild_players_stats,
+    FIELDER_PROFILE_DEFAULTS,
+    PITCHER_PROFILE_DEFAULTS,
 )
 from config import get_config
 
@@ -394,12 +396,51 @@ def get_player(player_id):
     return jsonify(player.to_dict())
 
 
+# ── 球员接口的字段边界 ──────────────────────────────────────────────
+# Player 上的统计字段是通过 database.py 的 property proxy
+# (_build_profile_proxy) 直通 FielderProfile / PitcherProfile 的 ——
+# 也就是说 setattr(player, 'at_bats_total', x) 会**真实写库**。
+# 这条路径绕开了 GameRecord（唯一真源），会让档案与原始记录对不上，
+# 是 Phase R1 之后仅存的最后一个统计写入口。
+#
+# 所以这里直接从 proxy 清单推导「禁止写入」的字段集合：
+# 以后给 profile 增加字段，本接口自动跟着收紧，不必手写名单。
+PLAYER_STATS_FIELDS = frozenset(FIELDER_PROFILE_DEFAULTS) | frozenset(PITCHER_PROFILE_DEFAULTS)
+
+# 本接口允许修改的字段（纯 metadata，不含任何累计统计）
+PLAYER_METADATA_FIELDS = frozenset({
+    'name', 'jersey_number', 'is_pitcher', 'player_type',
+    'positions', 'primary_position',
+})
+
+
 @app.route('/api/players/<int:player_id>', methods=['PUT'])
 @admin_required
 def update_player(player_id):
-    """更新球员信息"""
+    """更新球员资料（**只改 metadata，不改统计**）。
+
+    累计数据（打数、安打、局数……）是 game_records 的派生值，
+    只能通过比赛记录接口写入：
+
+        POST /api/game_records
+        POST /api/game_records/batch
+        PUT  /api/game_records/<id>
+
+    提交统计字段会直接 400 拒绝，避免「提示成功但数据没进去」的静默丢失。
+    """
     player = Player.query.get_or_404(player_id)
     data = request.json or {}
+
+    if not isinstance(data, dict):
+        return jsonify({'error': '请求体必须是 JSON 对象'}), 400
+
+    rejected = sorted(f for f in data if f in PLAYER_STATS_FIELDS)
+    if rejected:
+        return jsonify({
+            'error': '统计字段不能通过球员接口写入。累计数据只能由比赛记录推导，'
+                     '请改用 POST /api/game_records 或 POST /api/game_records/batch。',
+            'rejected_fields': rejected,
+        }), 400
 
     try:
         normalized = _normalize_player_payload(data, existing_player=player)
@@ -408,108 +449,24 @@ def update_player(player_id):
 
         _apply_player_profile(player, normalized)
 
-        # 更新打击数据
-        batting_fields = [
-            'at_bats_total',     # 打数
-            'hits_total',        # 安打
-            'rbi_total',         # 打点
-            'home_runs_batting', # 本垒打
-            'runs_total',        # 得分
-            'walks_total',       # 保送
-            'strikeouts_batting_total',  # 三振
-            'doubles',           # 二垒安打
-            'triples',           # 三垒安打
-            'stolen_bases',
-            'hit_by_pitch',
-            'caught_stealing',
-            'sacrifice_flys',
-            'sacrifice_hits',
-            'errors_fielding',
-            'passed_balls'
-        ]
-        
-        # 更新字段
-        for field in batting_fields:
-            if field in data:
-                value = data[field]
-                try:
-                    if value is None or value == '':
-                        int_value = 0
-                    else:
-                        int_value = int(value)
-                    setattr(player, field, int_value)
-                except (ValueError, TypeError):
-                    pass
-
-        pitcher_fields = [
-            'innings_pitched_total', 'hits_allowed_total', 'runs_allowed_total',
-            'earned_runs_total', 'walks_allowed_total', 'strikeouts_total',
-            'home_runs_allowed_total', 'pitches', 'strikes', 'hit_by_pitch_allowed',
-            'batters_faced', 'wild_pitches'
-        ]
-
-        for field in pitcher_fields:
-            if field in data:
-                value = data[field]
-                try:
-                    if value is None or value == '':
-                        parsed_value = 0.0 if field == 'innings_pitched_total' else 0
-                    elif field == 'innings_pitched_total':
-                        parsed_value = float(value)
-                    else:
-                        parsed_value = int(value)
-                    setattr(player, field, parsed_value)
-                except (ValueError, TypeError):
-                    pass
-        
-        # 更新计算字段
+        # 只重算派生率（AVG/OBP/SLG/OPS/ERA/WHIP），不碰任何累计值
         player.update_calculated_fields()
 
         db.session.commit()
 
-        player_dict = player.to_dict()
+        # 既不是 metadata、也不是被拒的统计字段 —— 拼错的键，回报给调用方自查
+        ignored = sorted(f for f in data if f not in PLAYER_METADATA_FIELDS)
 
         return jsonify({
             'message': '球员信息更新成功',
-            'player': player_dict
+            'player': player.to_dict(),
+            'ignored_fields': ignored,
         })
-        
+
     except Exception as e:
         db.session.rollback()
         return _safe_error(e)
-    
-def update_player_stats(player, data):
-    """更新球员统计字段"""
-    # 打击数据
-    stat_fields = [
-        'at_bats_total', 'runs_total', 'hits_total', 'rbi_total',
-        'walks_total', 'strikeouts_batting_total', 'doubles', 'triples',
-        'home_runs_batting', 'stolen_bases', 'hit_by_pitch', 'caught_stealing',
-        'sacrifice_flys', 'sacrifice_hits', 'total_bases', 'errors_fielding',
-        'passed_balls', 'wild_pitches'
-    ]
-    
-    for field in stat_fields:
-        if field in data:
-            if field in ['total_bases']:
-                setattr(player, field, int(data[field]))
-            else:
-                setattr(player, field, int(data[field]))
-    
-    # 投手数据
-    pitcher_fields = [
-        'innings_pitched_total', 'hits_allowed_total', 'runs_allowed_total',
-        'earned_runs_total', 'walks_allowed_total', 'strikeouts_total',
-        'home_runs_allowed_total', 'pitches', 'strikes', 'hit_by_pitch_allowed',
-        'batters_faced'
-    ]
-    
-    for field in pitcher_fields:
-        if field in data:
-            if field in ['innings_pitched_total']:
-                setattr(player, field, float(data[field]))
-            else:
-                setattr(player, field, int(data[field]))
+
 
 @app.route('/api/players/<int:player_id>', methods=['DELETE'])
 @admin_required

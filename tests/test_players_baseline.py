@@ -140,25 +140,42 @@ def test_update_player(auth_client):
 
 
 def test_update_player_with_stats(auth_client):
-    """通过 PUT 端点直接更新统计字段（BASELINE：当前允许，Phase C5 限制）"""
+    """通过 PUT 端点直接更新统计字段 —— PHASE R2 起被拒绝（400）。
+
+    行为变更记录（规范 §45「行为变更必须专门记录并显式修」）：
+
+      - **Phase E0 基线**：本接口**允许**直接覆盖 profile 累计字段
+        （经 Player 的 property proxy 直通 FielderProfile/PitcherProfile），
+        当时锁的是旧行为，并注明「Phase C5 限制」。
+      - **Phase R2**：接口收窄为 metadata-only，统计字段一律 400 拒绝。
+        理由：累计数据是 `game_records` 的派生值，绕过 GameRecord 会让档案
+        与原始记录对不上（见 docs/DOMAIN_AND_ARCHITECTURE_DESIGN.md「禁止路径」、
+        规范 §41 / §76）。
+      - 完整的新契约（允许字段、拒绝字段、忽略字段、不变量）见
+        **tests/test_player_metadata_boundary.py**。
+    """
     create_resp = auth_client.post('/api/players', json={
         'name': '周九', 'jersey_number': '9',
         'is_pitcher': False, 'positions': ['外野手'], 'primary_position': '外野手',
     })
     pid = create_resp.get_json()['player']['id']
 
-    auth_client.put(f'/api/players/{pid}', json={
+    resp = auth_client.put(f'/api/players/{pid}', json={
         'name': '周九', 'jersey_number': '9',
         'is_pitcher': False, 'positions': ['外野手'], 'primary_position': '外野手',
         'at_bats_total': 100, 'hits_total': 30, 'rbi_total': 15,
     })
+    assert resp.status_code == 400, resp.data
+    body = resp.get_json()
+    assert '统计字段' in body['error']
+    assert 'at_bats_total' in body['rejected_fields']
 
     with auth_client.application.app_context():
         p = Player.query.get(pid)
-        assert p.at_bats_total == 100
-        assert p.hits_total == 30
-        assert p.rbi_total == 15
-        assert p.batting_average == 0.300
+        assert p.at_bats_total == 0
+        assert p.hits_total == 0
+        assert p.rbi_total == 0
+        assert p.batting_average == 0
 
 
 # ====== 删除 ======
