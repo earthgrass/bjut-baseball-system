@@ -257,38 +257,58 @@ bjut-baseball-system/
 ├── run.py                    # 启动脚本，绑定 0.0.0.0（部署用）
 ├── run_local.py              # 启动脚本，绑定 127.0.0.1（本地开发用）
 ├── config.py                 # 配置类（Production / Development / Testing）
-├── database.py               # 数据模型 + 迁移 + 统计同步 + 默认管理员
-├── pdf_parser.py             # PDF 解析模块
-├── import_pdfs.py            # PDF 批量导入脚本
+├── database.py               # 数据模型 + 迁移 + 统计重建 + 默认管理员
+├── metrics.py                # 指标引擎（ERA/WHIP/AVG/OBP/SLG/OPS 唯一来源）
+├── pdf_ingest.py             # PDF 解析入口（优先列坐标版，失败才退回文本版）
+├── pdf_parser.py             # 文本版解析器（遗留，回退用）
+├── pdf_parser_columns.py     # 列坐标版解析器（按词坐标切左右两栏）
+├── import_pdfs.py            # PDF 批量导入脚本（原子事务 + 覆盖模式）
 ├── init_db.py                # 初始化数据库（含示例数据）
 ├── create_admin.py           # 交互式创建管理员
-├── cleanup_db.py             # 数据库清理工具
-├── migrate_profiles_sqlite.py# 历史档案迁移脚本
+├── cleanup_db.py             # 数据库清理工具（合并球员后重建档案）
+├── migrate_profiles_sqlite.py# 历史档案迁移脚本（已停用，需 --force 参数）
+├── sync_data.py              # 兼容入口：档案重建（转调 database.rebuild_player_stats）
 ├── requirements.txt          # Python 依赖
+├── requirements-dev.txt      # 开发依赖（ruff / pytest）
+├── pyproject.toml            # ruff 静态检查配置
 ├── Dockerfile                # Docker 构建文件（保留为回退方案）
 ├── docker-compose.yml        # Docker Compose 配置
 ├── .env.example              # 环境变量模板
+├── API_CONTRACT.md           # 接口契约（接手必读）
 ├── API_DOCUMENTATION.md      # API 调用文档
 ├── docs/                     # 设计与事故分析文档
 │   ├── DOMAIN_AND_ARCHITECTURE_DESIGN.md
 │   ├── CSRF_AUDIT.md
 │   ├── STATS_WRITE_PATH_REPORT.md
 │   ├── DB_FORENSICS_REPORT.md
-│   └── PHASE_R0_REPORT.md
+│   ├── ISSUES_AUDIT_20261029.md   # 全量问题清单审计
+│   ├── PHASE_R0_REPORT.md          # 数据事故取证
+│   ├── PHASE_R2_REPORT.md
+│   ├── PHASE_R3_REPORT.md          # 指标引擎 + 列坐标解析器
+│   └── PHASE_R4_REPORT.md          # 数据校正迁移（生产库 230 → 240 条）
 ├── scripts/                  # 一次性 / 运维脚本
+│   ├── backup_db.py          # 一致性快照备份 + SHA256 + 指纹
+│   ├── add_indexes.py        # 索引迁移（附迁移前后执行计划对比）
+│   ├── compare_db.py         # 迁移前后逐条比对报告器
+│   ├── verify_e2e.py         # 端到端验证（**打在副本上**，不动生产库）
+│   ├── rebuild_stats.py      # 显式重建档案（先出漂移报告）
+│   ├── validate_pdf_parse.py # 用 PDF 自己的 Totals 行做独立校验
 │   ├── reset_admin_password.py  # 重设管理员密码
 │   ├── r0_recover.py            # 数据库恢复工具
 │   ├── db_forensics.py          # 数据库指纹取证
 │   ├── dedupe_tailwind_config.py
 │   └── inject_tailwind_config.py
-├── tests/                    # pytest 回归测试（62 个）
+├── tests/                    # pytest 回归测试（124 个）
 │   ├── conftest.py           # 测试隔离（临时库 + 生产库 SHA256 看门狗）
 │   ├── test_canary_r0.py     # 生产库未被改动的哨兵测试
 │   ├── test_players_baseline.py
 │   ├── test_game_records_baseline.py
 │   ├── test_stats_baseline.py
 │   ├── test_matchup_baseline.py
-│   └── test_pdf_parser_baseline.py
+│   ├── test_pdf_parser_baseline.py
+│   ├── test_r3_metrics_and_import.py  # 指标引擎 / 导入路径 / PDF 解析
+│   ├── test_r4_migration_and_hardening.py  # 原子事务 / 索引 / 备份 / 弃用 API
+│   └── js/batch_entry.test.js # 前端解析器单测（node --test）
 ├── templates/                # HTML 模板
 │   ├── base.html             # 公共布局（nav / arena 背景 / csrf meta）
 │   ├── _navbar.html          # 导航栏 partial
@@ -299,6 +319,7 @@ bjut-baseball-system/
 │   ├── add_player.html       # 添加球员
 │   ├── game_stats.html       # 比赛数据
 │   ├── add_game_record.html  # 添加比赛记录
+│   ├── batch_entry.html      # 批量录入（粘贴 box score）
 │   ├── stats.html            # 统计图表
 │   ├── matchup_stats.html    # 对局信息
 │   ├── pdf_viewer.html       # PDF 查看
@@ -309,6 +330,7 @@ bjut-baseball-system/
 │   └── js/
 │       ├── api.js            # fetchJson() 封装（自动带 CSRF header）
 │       ├── script.js         # 球员页逻辑
+│       ├── batch_entry.js    # 批量录入解析器（纯逻辑，有单测）
 │       ├── game_record.js    # 比赛录入逻辑
 │       ├── game_stats.js     # 比赛数据页逻辑
 │       ├── matchup_stats.js  # 对局统计逻辑
@@ -320,7 +342,8 @@ bjut-baseball-system/
 │   └── 2025/  (6 个 PDF)
 ├── recovery/                 # 数据事故取证与恢复快照（本地保留，不入库）
 └── instance/                 # 数据库文件目录（gitignored）
-    └── baseball_players.db
+    ├── baseball_players.db   # 生产库
+    └── backups/              # 自动备份（scripts/backup_db.py 产出）
 ```
 
 ---
@@ -374,18 +397,35 @@ PDF 文件命名格式建议：`队伍A_vs_队伍B_月_日_年.pdf`
 ## 测试
 
 ```bash
-pip install pytest
+pip install -r requirements-dev.txt
+
 python -m pytest tests/ -q
-# 96 passed
+# 124 passed
 
 # 前端解析器的单元测试（需要 node）
-node --test tests/js/batch_entry.test.js
+node --test tests/js/
 # 25 passed
+
+# 静态检查
+ruff check .
+# All checks passed!
+
+# 端到端验证（复制生产库 → 连副本跑 → 复验生产库 SHA256 未变 → 删副本）
+python scripts/verify_e2e.py
+# 30/30 通过
+
+# PDF 解析独立校验（用 PDF 自己的 Totals 行当真值）
+python scripts/validate_pdf_parse.py
+# 16/17 份通过（第 17 份是源 PDF 自己前后矛盾）
 ```
 
 > **测试绝不能碰生产库**。`tests/conftest.py` 用 `DATABASE_FILE` 环境变量
 > 在 `import app` **之前**把数据库指向临时目录，并全程监视生产库的 SHA256。
 > 详见 `docs/PHASE_R0_REPORT.md`（2026-04 数据事故的取证记录）。
+>
+> ⚠️ 端到端验证**不要**用 `instance/_verify_e2e.py` 这类旧探针 ——
+> 它们打的是正在运行的服务器、用的硬编码口令、**真的会写生产库**。
+> 现在默认被安全闸拦住，用 `python scripts/verify_e2e.py`。
 
 ### 测试隔离机制（重要）
 
@@ -481,6 +521,15 @@ Phase E0/E0.5 期间，`tests/conftest.py` 用 `sqlite:///:memory:` 覆盖数据
 | `.gitignore` 是 UTF-16 编码 | Git 解析失败，**所有忽略规则全部失效**：`.env`（含 SECRET_KEY）、真实数据库、`__pycache__/` 均可被误提交 | 转存为 UTF-8，并补 `recovery/`、`*.db-wal` 等规则 |
 | `PUT /api/players/<id>` 能直接覆盖累计统计 | `Player.at_bats_total` 等是 property proxy，`setattr` **真实写库**，绕过 `game_records` 唯一真源 | 收窄为 **metadata-only**：统计字段一律 400 拒绝（不静默忽略），并删除前端的同款死代码 |
 | `GET /api/game_records/<id>` 的 `'strikeouts'` 重复键 | Python dict 后者覆盖前者 → 打击记录的三振恒返回 0；对局页编辑保存时把打击三振**抹成 0** | 按 `is_pitching` 返回对应列；另加 AST 静态检查防同类 bug 再犯 |
+| PDF 解析把**对方球员**混进我方 | 旧解析器靠「第一段/最后段」猜哪段是我方 → 造出过 '齐佳王佳帅'、'孙世铎'、'子非陈' 三个幽灵球员 | 改用**列坐标**解析（`pdf_parser_columns.py`），并用 PDF 自己的 Totals 行做独立校验（16/17 份通过） |
+| 三垒打 **188/188 条全丢** | 旧标签正则里根本没有 `3B` | 同上，列坐标解析后恢复 |
+| ERA/WHIP 系统性偏高（最大 44%） | 中文记法 `.1` = 1/3 局，公式却用字面值当真实局数 | 聚合时**逐条**换算（`metrics.innings_to_true`）；档案存真实局数，记录里保留记法字面值 |
+| 重导 PDF 修不了历史数据 | 去重逻辑命中旧记录就跳过 → 实测 imported 0 / skipped 212 | 导入加**覆盖模式**（`--replace`）：先删这场旧记录再写新数据 |
+| `app.py` 用了 `re.sub()` 却没 `import re` | **PDF 上传接口必然 500**（ruff F821 查出来） | 补 import，并给上传路径补了端到端覆盖 |
+| `cleanup_db.py` 的 CJK 部首表**整体错位一位** | U+2F0C 被写成「门」，其后 200+ 条映射全部偏移 | 改用 Unicode NFKC 权威映射（ruff F601 查出来） |
+| 热点表**零索引** | `game_records` / `players` 的查询全是 `SCAN` | 新建库由模型 `__table_args__` 自动建；老库用 `scripts/add_indexes.py` 补建 |
+| 没有自动备份 | 备份全是手工产物 | `scripts/backup_db.py`（一致性快照 + SHA256 + 指纹 + 保留份数） |
+| 旧探针脚本会写坏生产库 | `instance/_verify_*.py` 打正在运行的服务器 + 硬编码口令 | 加安全闸（默认拒绝），改用 `scripts/verify_e2e.py`（打在副本上） |
 
 ---
 

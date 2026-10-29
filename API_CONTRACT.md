@@ -460,29 +460,46 @@ curl -X POST http://127.0.0.1:5000/api/game_records \
 > `tests/test_game_record_read_back.py::test_no_duplicate_keys_in_dict_literals`
 > 会在同类问题复发时失败。
 
-### 4.5 指标口径问题（**别照抄**）
+### 4.5 指标口径（**已统一到 `metrics.py`，以下是现行口径**）
 
-| 指标 | 现状 | 问题 |
+| 指标 | 现行公式 | 备注 |
 |---|---|---|
-| WHIP | `(BB+H) / IP` | 标准是 `(BB+H) / BF`。而且 BF 只有 3/42 条记录有值，**正确的 WHIP 现在算不出来** |
-| OBP | 分母 `AB+BB+HBP+SF` | 漏了 SH（牺牲高飞推进）。当前 SH 全为 0，属潜伏 bug |
-| OPS | `round(OBP) + round(SLG)` | 二次舍入，应先用未舍入值 |
-| ERA | `ER*9/IP` | 公式对，但 IP 存的是十进制 float，PDF 的 `1.1`（=1⅓ 局）被当成 1.1 |
+| WHIP | `(BB+H) / 真实IP` | 标准定义用 BF，但本项目的 BF（面对打席）只有部分比赛有值；现按 `(BB+H)/IP` |
+| OBP | `(H+BB+HBP) / (AB+BB+HBP+SF+SH)` | 分母**已含 SH**（旧版漏了） |
+| SLG | `总垒数 / AB` | 总垒数 = 一垒安打 + 2×二垒 + 3×三垒 + 4×本垒打 |
+| OPS | `OBP + SLG` | 一次舍入，不是 `round(OBP)+round(SLG)` |
+| ERA | `ER×9 / 真实IP` | IP 必须**逐条**把记法字面值换成真实局数（`.1` = 1/3 局） |
+| AVG | `H / AB` | — |
 
-### 4.6 统计公式散落 5 处
+> ⚠️ **局数是最容易搞错的一条**：`game_records.innings_pitched` 存的是
+> **记法字面值**（PDF 上印的 `.1` 就是 1/3 局），而档案里的
+> `innings_pitched_total` 是**真实局数**。两者差着 2/3 局。
+> 换算**必须逐条做** —— 各场小数位相加可能 ≥10 而进位
+> （0.5+0.5 → 字面合计 1.0，换算后应是 3.333 局）。
 
-`database.py:334-418`（权威）· `import_pdfs.py:229-234` · `app.py:1203` ·
-`static/js/script.js:1076` · `migrate_profiles_sqlite.py:106-150`
+### 4.6 统计公式散落 5 处 → **已收敛为 1 处**
 
-**改公式必须同步改 5 处**，包括前端那份（用于实时预览）。
-更好的做法见 `FEATURE_PROPOSALS.md` 的 F3「指标引擎」。
+**现状（Phase R3 起）**：全项目只有 `metrics.py` 一份公式来源。
+`database.py` · `import_pdfs.py` · `app.py` · `migrate_profiles_sqlite.py` ·
+`static/js/script.js` 全部改为调用它。
 
-### 4.7 PDF 解析器有静默错误
+- 局数（IP）口径：`game_records.innings_pitched` 存的是**记法字面值**
+  （`.1` = 1/3 局），与 PDF 一致；**聚合时逐条换算**成真实局数
+  （不能对合计换算 —— 各场小数位相加可能 ≥10 而进位）。
+  档案里的 `innings_pitched_total` 是**真实局数**。
+- OBP 分母已含牺牲触击(SH)：`(H+BB+HBP) / (AB+BB+HBP+SF+SH)`。
+- 有自动检查兜底：`tests/test_r3_metrics_and_import.py` 里的
+  「指标唯一性」用 AST 扫 Python **和** JS，任何地方再自己算 ERA 都会让测试失败。
 
-- 解析器**不使用列坐标**，把双栏 PDF 压平成文本行后靠启发式猜我方 → 对手数据会串进我方
-- 三垒打永不提取，且污染二垒打
-- HBP 合并两队 → 幻影数据
-- 我方在右栏时，`win` 会抓到对手的胜投
+### 4.7 PDF 解析器有静默错误 → **已修**
+
+- ~~解析器不使用列坐标，把双栏 PDF 压平成文本行后靠启发式猜我方~~
+  → 现在是 `pdf_parser_columns.py`（按词坐标切栏），`pdf_ingest.py` 统一对外。
+- ~~三垒打永不提取，且污染二垒打~~ → 已提取（`3B` 标签）。
+- ~~HBP 合并两队 → 幻影数据~~ → 按栏切分，HBP 只取我方栏。
+- ~~我方在右栏时，`win` 会抓到对手的胜投~~ → 已按栏归属。
+- 独立校验：`python scripts/validate_pdf_parse.py` 用 PDF **自己**的 Totals 行当真值
+  （打击 Totals 17/17 吻合、投手局数 16/17 吻合 —— 第 17 份是源 PDF 自相矛盾）。
 - 局数 `1.1` 被当成 1.1 而不是 1⅓ 局（全局少算 5.6%）
 
 **"17/17 解析零失败"恰恰是最危险的地方**——错误全部静默。
@@ -518,7 +535,8 @@ feature/xxx   —— 你的功能分支，从 main 切出
 | 路径 | 职责 | 注意 |
 |---|---|---|
 | `app.py` | 所有路由（约 1800 行） | **不要再往里塞东西**，新路由建议开 `blueprints/` |
-| `database.py` | 模型 + 统计公式 + 迁移 | 公式改动要同步 5 处（§4.6） |
+| `database.py` | 模型 + 档案重建 + 迁移 | 指标公式在 `metrics.py`，别在这里另写一份（§4.6） |
+| `metrics.py` | **唯一的指标公式来源** | 改公式只改这里；有 AST 检查兜底（§4.6） |
 | `config.py` | 三套配置 | `TestingConfig` 关闭 CSRF，测不出来 |
 | `static/js/api.js` | **唯一的 API 调用层** | 新代码别用裸 `fetch` |
 | `static/js/toast.js` | **唯一的提示组件** | 别再用 `alert()` |

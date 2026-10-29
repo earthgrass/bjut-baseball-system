@@ -1,112 +1,123 @@
-# 交接说明 — 2026-10-29 存档点
+# 交接说明 — 2026-10-29 存档点（phase-R4 完成后）
 
 > 这是**明天的起点**。从这里接着做即可，不必从头回溯。
-> 上一版存档点：2026-10-28（phase-R1 完成时）。
+> 上一版存档点：2026-10-29 上午（phase-R2 完成后）；R3/R4 的报告见 `docs/`。
 
 ---
 
-## 一、当前状态：可运行
+## 一、当前状态：可运行，数据已校正
 
 ```bash
 pip install -r requirements.txt
-cp .env.example .env          # SECRET_KEY 已填好；SECRET_KEY 是本机自签名的，泄露无所谓
+cp .env.example .env          # SECRET_KEY 已填好（仅本机）
 python run_local.py           # → http://127.0.0.1:5000
 ```
 
 管理员：`admin` / `admin123`（本机开发用；公网前必须改）
 
 **验证状态（2026-10-29 实测）**：
-- **96 个 pytest 全绿**（74 原有 + 22 新增）
-- **25 个 node 单测全绿**（`node --test tests/js/batch_entry.test.js`）
-- 12 个页面 + 32 个 API 端点
-- 端到端 53 项检查全通过（在**生产库副本**上跑，见 `docs/PHASE_R2_REPORT.md` §7）
-- 不变量 `profile == SUM(game_records)` 成立（27 名球员 × 6 组字段，漂移 0）
-- 生产库 SHA256 全程未变：`eb63d4a3a09c46dd4b1bfc07c6c685f2d271f10b2ed06fdac8edabab6da15d7e`
 
----
-
-## 二、这一轮（phase-R2）做完了什么
-
-### 修复：最后一个绕过 GameRecord 的统计写入口
-
-`PUT /api/players/<id>` 以前能直接覆盖 profile 累计字段 —— `Player.at_bats_total` 等是
-`database.py:_build_profile_proxy` 生成的 property proxy，`setattr` 是**真实写库**。
-现已收窄为 **metadata-only**：
-
-| 允许 | 拒绝（400） |
+| 项 | 结果 |
 |---|---|
-| `name` `jersey_number` `is_pitcher` `player_type` `positions` `primary_position` | 任何统计字段（打数、安打、局数、ERA、OPS……） |
-
-- 拒绝而不是静默忽略 —— 避免「接口返回成功但数据没进去」。
-- 拒绝字段集合从 proxy 清单**推导**，不手写名单 —— 以后给档案表加字段，接口自动收紧。
-- 顺带删掉 `static/js/script.js` 里 530 行会发统计字段的死代码。
-
-### 修复：三振字段重复键（真实数据丢失）
-
-`GET /api/game_records/<id>` 的响应 dict 里 `'strikeouts'` 写了两次，
-Python 后者覆盖前者 → **打击记录的三振恒返回 0**。
-对局页用这个端点回填编辑表单再 PUT 回去 → **打击三振被抹成 0**，生涯三振跟着掉。
-已按记录类型返回对应列，并加了一道 AST 静态检查防同类 bug 再犯。
-
-### 新增：批量录入界面（`/batch_entry`）
-
-粘贴 box score，一次写完整场比赛：
-
-```
-打击：姓名 AB R H RBI BB SO   [2B] [3B] [HR] [HBP] [SB] [CS] [SF] [SH]
-投球：姓名 IP H R ER BB SO   [HR] [P] [ST] [BF] [WP]
-```
-
-粘贴即实时解析成两张预览表，逐行标 ✓ / 错误原因；
-姓名对不上、非投手录投球、`H > AB`、`H < 2B+3B+HR` 都会标红并阻止提交
-（**不静默跳过** —— 跳过等于丢数据）。确认无误后整场提交，走既有的
-`POST /api/game_records/batch`（全有或全无），**后端语义没变**。
-
-局数按 box score 上的字面数字入库（中文记法 `.1` = 1/3 局），与既有 230 条记录同口径 ——
-不在 UI 层换算，避免同一列出现两套单位。
+| pytest | **124 passed**（115 原有 + 9 新增） |
+| node 单测 | 25 passed（`node --test tests/js/`） |
+| ruff | `All checks passed!`（全项目 0 告警） |
+| 端到端 | `scripts/verify_e2e.py` **30/30**（打在副本上，生产库 SHA 未变） |
+| PDF 独立校验 | `scripts/validate_pdf_parse.py` 16/17（第 17 份是源 PDF 自相矛盾） |
+| 生产库 | 27 球员 / **240** 比赛记录 / 2023-04-01 ~ 2025-11-22 / integrity ok / fk 0 |
+| 不变量 | 档案 == SUM(game_records)，漂移 **0** |
+| 生产库 SHA256 | `e337144317c206c78b7f68d80bad9aec190fda441d997b9f1ea3606ec79d140e` |
 
 ---
 
-## 三、明天接着做（按建议顺序）
+## 二、R4 这一轮做完了什么
+
+### 1. 把修好的 PDF 解析器**真正用到了生产数据**
+
+R3 结束时是「代码对了、数据是错的」：列坐标解析器写好了，但生产库的 230 条记录
+仍是旧文本解析器的产物。本轮完成迁移：
+
+```text
+生产库 230 → 240 条（新增 11 条旧解析整行漏掉的人次，消失 0 条）
+82 条记录被修正，共 149 处字段
+三垒打记录 0 → 3 · 面对打席 3 → 39 · 暴投 0 → 2
+HBP 从「安在错的人头上」纠正为「按 PDF 原文归属」
+刘孝宇生涯 ERA 22.50 → 19.80，李昊宇 16.88 → 15.00
+球员名单零变化 · 2025-11-22 那 16 条无 PDF 依据的记录原样保留
+```
+
+报告：`docs/PHASE_R4_REPORT.md`（含逐项验证、三个指纹、两个回滚点）。
+
+### 2. ruff 上线，抓出 3 个真 bug
+
+| 严重度 | bug | 后果 |
+|---|---|---|
+| **P1** | `app.py` 用 `re.sub()` 却没 `import re` | **PDF 上传接口必然 500** —— 这条路径从未被人工走过 |
+| **P1** | `cleanup_db.py` 的 CJK 部首表整体错位一位 | U+2F0C 写成「门」，其后 200+ 条映射全偏移（改用 Unicode NFKC 修） |
+| **P2** | `sync_data.py` 是档案重算的**第二套实现** | 24 处 `+=`、局数按字面值、硬编码生产库路径（改为只调权威实现） |
+
+同时：前端最后一份公式拷贝（死代码，110 行）删除；`migrate_profiles_sqlite.py`
+改用 `metrics.py`；`Query.get()` 弃用告警 312 → 13 条；`conftest.py` 重复 fixture 清理。
+
+### 3. 剩下的审计项
+
+| # | 项 | 状态 |
+|---|---|---|
+| #5 | `cleanup_db.py` 合并后不重建档案 | ✅ 改调 `rebuild_player_stats()`，有回归测试 |
+| #11 | `errors_fielding` / `passed_balls` 孤儿字段 | ✅ **部分解决**：查明 4 份 PDF 有 `E:`（守备失误）、1 份有 `SF:`（牺牲打）→ 接上并纳入聚合；`passed_balls` 在 17 份 PDF 里**确实没有数据源**，保留列但写明「不是真实 0」 |
+| #15 | 指标公式 6 份拷贝 | ✅ 全项目只剩 `metrics.py` 一份（AST 检查同时扫 Python 与 JS） |
+| #17 | 热点表零索引 | ✅ 5 个索引，热查询从 `SCAN` 变 `SEARCH ... USING COVERING INDEX` |
+| #18 | 没有自动备份 | ✅ `scripts/backup_db.py`（一致性快照 + SHA256 + 指纹 + 保留份数） |
+| #22 | 没有 CI / lint | ✅ ruff + GitHub Actions（pytest / node --test / ruff，外加一个专盯「测试不碰生产库」的 job）。⚠️ `.pre-commit-config.yaml` **未创建**（装 Git 钩子需你点头） |
+| #24 | `Query.get()` 弃用 | ✅ 全项目清零 |
+| #26 | 前端死代码 | ✅ 删 110 行 |
+| #28 | session cookie 未配置 | ✅ HttpOnly / SameSite=Lax / Secure 可配；生产环境未开 Secure 时**启动告警** |
+| #29 | 限流用内存存储 | ✅ 说明清楚：多 worker 必须换 Redis；生产启动时告警 |
+| #14 | `instance/` 里的探针会写坏生产库 | ✅ 加安全闸（默认拒绝）；新增打在副本上的 `scripts/verify_e2e.py` |
+| #32 | 「欧阳 / 欧阳翦」 | ✅ **业务方已确认：同一个人** → 写成显式别名，导入报告仍显式上报 |
+| #33 | 赛季怎么切 | ⏳ 待业务方拍板（需要 Game 实体） |
+| #34 | 刘孝宇异常失分 | ✅ 数据已修正（见上） |
+| #35 | PDF 里的对方球员名字 | ✅ 澄清：新解析器不再混进我方；残留的「尹文浩」是记分卡上的教练行（0 AB），已跳过且不建球员 |
+
+---
+
+## 三、下一步（按建议顺序）
 
 ### 中等工程量（1-2 天）
 
-1. **PDF 导入改成走 rebuild**（**最高优先级的技术债**）——
-   `import_pdfs.py:157-171, 216-234` 仍用 `+=` 增量写 profile，与「档案从
-   `game_records` 重算」的核心不变量直接冲突。现在被启动时的
-   `sync_stats_from_game_records()` 全量重算掩盖着，但**重导 PDF 会产生漂移**。
-   改法：写完 `GameRecord` 后调 `rebuild_player_stats(player.id)`，删掉全部 `+=`。
-2. **PDF 解析器改用列坐标**（`FEATURE_PROPOSALS.md` F7a）——
-   **性价比最高的一项**，能一次性修掉 8 个静默数据错误，
-   并且**重导 17 份 PDF 就能修正全部 230 条历史数据**
-   （局数少算 5.6%、三垒打全丢、HBP 幻影、投球数丢失、胜负记错）。
-   建议与第 1 项一起做。
-3. **指标引擎**（F3）—— 把散在 5 处的公式收成一处，顺带修 WHIP 分母、
-   OBP 漏 SH。依赖第 2 项（BF 数据要靠列坐标才有）。
-4. **路径泄漏修掉**（两处小改动）：
-   - `pdf_parser.py:118` 把异常原文包进返回值，被**匿名可达**的
-     `/api/pdf/parse/<path>` 透传 → 泄漏服务器绝对路径
-   - `app.py:1903` `confirm_import` 直接回显 `str(e)` → 同上
-5. **`confirm_import` 补 `_safe_data_path()` 校验**（`app.py:1911-1916`）——
-   其它 PDF 路由都做了，唯独这里没做。
+1. **Game 一级实体**（规范 §18/§19/§71-73，审计 #20）——
+   现在「一场比赛」= `game_date + opponent` 字符串，双赛日无法表达、
+   对手改名会产生「同一场比赛两条记录」、去重键依赖对手字符串写法一致。
+   目标 schema：`Game(id, game_date, opponent, season, venue, game_number,
+   source_pdf, notes, created_at, updated_at)` + `UNIQUE(game_id, player_id, record_type)`。
+   **必须在生产库副本上验证，row loss 必须为 0**，迁移报告按规范 §72 出。
+2. **Service 层**（规范 §37-42，审计 #16）——
+   `StatsService.audit_player / audit_all / rebuild_player / rebuild_all`
+   与 `GameService`（事务边界）、`PlayerService`（metadata 边界）。
+   蓝图只做 HTTP / 校验 / 鉴权 / 调 service / 返回。
+3. **蓝图拆分**（规范 §43/§77）—— 一次拆一个，每拆完跑全量测试。
+   顺序：players → game records → matchup → stats → pdf → auth → pages。
 
 ### 立刻能做的（1-2 小时）
 
-6. **在浏览器里真人点一遍 `/batch_entry`** —— 本轮**唯一未验证项**。
-   本机没有浏览器自动化（playwright / selenium / puppeteer 都不可用），
-   已用三道替代验证覆盖（JS 解析器 25 个单测、JS↔模板 DOM id 契约静态检查、
-   HTTP 层端到端 53 项），但**页面在真实浏览器里的渲染与交互没人工确认过**。
-7. **`PUT /api/players` 的 400 响应在前端的提示** —— `templates/players.html`
-   目前只发 metadata，碰不到 400；但如果以后有别的入口提交了统计字段，
-   最好在前端统一处理这个错误（提示"请改用比赛记录录入"）。
-8. **DataTables 加到 players / matchup 页面** —— 现在只有 game_stats 有分页。
+4. `/batch_entry` 在**真实浏览器**里点一遍 —— 仍是唯一未做的人工验证项
+   （本机没有 playwright/selenium/puppeteer）。已有三道替代验证：
+   JS 单测 25 个、JS↔模板 DOM id 契约静态检查、端到端 30 项。
+5. `PUT /api/players` 的 400 在前端统一提示（「请改用比赛记录录入」）。
+6. DataTables 加到 players / matchup 页面（现在只有 game_stats 有分页）。
+7. 建 `.pre-commit-config.yaml`（需要你点头 —— 装 Git 钩子属于持久化外部工具）。
 
 ### 需要先跟你确认的（业务歧义，脚本不能自动判）
 
-9. **player 28 在 2024-11-16 对北京交通大学的 2 条重复** —— 重复导入（删一条）
-   还是双赛日（归入两场 Game）？取证报告标为 AMBIGUOUS
-10. **赛季怎么切** —— 4 月春季 + 10/11 月秋季的学期制是否成立？
-    （`欧阳` vs `欧阳翦` 已确认：库里只有 `欧阳翦` 一个球员，不构成歧义）
+8. **赛季怎么切**（4 月春季 + 10/11 月秋季的学期制是否成立）——
+   需要 Game 实体才能表达，会影响所有统计口径。
+9. **2025-10-25 vs 华北电力大学那份 PDF 自己前后矛盾**：
+   投手局数之和 1.0，但它的 Totals 行写 1.2。是源数据录入错误，还是记分卡惯例？
+   （解析器按「Totals 行」为准 → 1.2；按明细求和 → 1.0。）
+10. **`2025-11-22 vs 北京交通大学` 的 16 条记录没有对应 PDF** ——
+    是漏传了 PDF，还是这��是手工录的？目前原样保留，无法用 PDF 验证。
+11. **`尹文浩`** 在 2023-04-16 的记分卡上有一行（0 AB，像是教练）——
+    他是队员吗？若是，需要补录。
 
 ---
 
@@ -118,15 +129,16 @@ Python 后者覆盖前者 → **打击记录的三振恒返回 0**。
 `app.config['SQLALCHEMY_DATABASE_URI']` **不生效**（官方文档原话：
 "Changes to application config after this call will not be reflected"）。
 
-早期版本的 `tests/conftest.py` 正是在 `import app` **之后**才覆盖 URI，
-导致 `db.drop_all()` 打中真实生产库 → 2026-04 数据事故。
-
-**现在**：用 `DATABASE_FILE` 环境变量，在 `import app` **之前**指定路径。
-注意 **`DATABASE_FILE` 的相对路径是相对 `instance/` 解析的**
+任何想换库的场景（包括测试隔离、迁移演练）必须走 `DATABASE_FILE` 环境变量，
+在 `import app` **之前**设好。注意 **`DATABASE_FILE` 的相对路径是相对 `instance/` 解析的**
 （`DATABASE_FILE=_scratch.db` → `instance/_scratch.db`；
 写 `instance/_scratch.db` 会变成 `instance/instance/_scratch.db` → 报
 `unable to open database file`）。
-改 `tests/conftest.py` 之前请先读 `docs/PHASE_R0_REPORT.md`。
+
+### `DATABASE_FILE` 与 pytest 的隔离顺序
+
+`tests/conftest.py` 在 `import app` 之前设 `DATABASE_FILE`（临时目录），
+并有 session 级 SHA256 看门狗。**改 conftest.py 之前先读 `docs/PHASE_R0_REPORT.md`。**
 
 ### 测试测不出 CSRF 问题
 
@@ -135,25 +147,31 @@ Python 后者覆盖前者 → **打击记录的三振恒返回 0**。
 
 ### 端到端验证要打在副本上
 
-用 `cp instance/baseball_players.db instance/_scratch.db` 建副本，
-`DATABASE_FILE=_scratch.db python run_local.py` 起服务，测完删掉。
-**永远不要对着生产库跑写操作**（`instance/_verify_writes.py`、
-`instance/_verify_e2e.py` 就是反面例子 —— 它们硬编码 `admin/admin123`
-打实盘并写库，已列入 backlog）。
+用 `python scripts/verify_e2e.py`（自动复制生产库 → 连副本跑 → 复验生产库 SHA 未变 → 删副本）。
+**不要**用 `instance/_verify_writes.py` / `instance/_verify_e2e.py` ——
+它们打的是正在运行的服务器、硬编码 `admin/admin123`、**真的会写生产库**
+（现已加安全闸默认拦截）。
 
 ### PDF 解析"零失败"是最危险的
 
-17/17 解析成功、0 异常，但数据静默错误。**解析成功 ≠ 数据正确。**
+17/17 份解析成功、0 异常，但数据静默错误率极高。
+**解析成功 ≠ 数据正确。** 独立校验要用 PDF 自己的 Totals 行当真值
+（`scripts/validate_pdf_parse.py`）。
 
-### 公式有 5 份拷贝
+### 局数口径
 
-`database.py:334-418`（权威）· `import_pdfs.py` · `app.py` ·
-`static/js/script.js`（前端预览）· `migrate_profiles_sqlite.py`。
-**改一个指标要同步改 5 处**（含前端那份）。
+`game_records.innings_pitched` 存**记法字面值**（`.1` = 1/3 局），
+档案 `innings_pitched_total` 存**真实局数**。换算必须**逐条**做
+（各场小数位相加可能 ≥10 而进位）。详见 `metrics.py` 开头。
+
+### 导入的写入语义
+
+`import_pdfs.py` 只写 `game_records`，档案一律 `rebuild_player_stats()` 重算。
+**不要**再写 `player.at_bats_total += ...` 之类的增量。
 
 ### `recovery/` 是只读取证快照
 
-绝对不要改动或删除。`git_bb429ba_db.bin` 是 R0 恢复源。
+绝对不要改动或删除。
 
 ---
 
@@ -161,29 +179,40 @@ Python 后者覆盖前者 → **打击记录的三振恒返回 0**。
 
 | 文档 | 内容 |
 |---|---|
-| `README.md` | 项目总览、快速开始、功能、已知问题 |
-| `API_CONTRACT.md` | **接手必读** —— 接口契约、认证/CSRF、已知问题、开发约定 |
+| `README.md` | 项目总览、快速开始、功能、已知问题与修复记录 |
+| `API_CONTRACT.md` | **接手必读** —— 接口契约、认证/CSRF、指标口径、开发约定 |
 | `API_DOCUMENTATION.md` | curl 调用示例 |
-| `FEATURE_PROPOSALS.md` | 10 个新功能提案 + 四维评估 + PDF 根因分析 |
-| `docs/PHASE_R2_REPORT.md` | **最新阶段报告**（本轮：收窄 PUT + 批量录入 + 三振 bug 修复） |
+| `FEATURE_PROPOSALS.md` | 10 个新功能提案 + 四维评估 |
+| `docs/ISSUES_AUDIT_20261029.md` | 全量问题清单审计（35 条，本轮收敛了大半） |
+| `docs/PHASE_R4_REPORT.md` | **最新阶段报告**（数据校正迁移 + 硬化） |
+| `docs/PHASE_R3_REPORT.md` | 指标引擎 + 列坐标解析器 |
+| `docs/PHASE_R2_REPORT.md` | 收窄 PUT + 批量录入 + 三振 bug 修复 |
 | `docs/PHASE_R0_REPORT.md` | 数据事故时间线与取证（改 conftest 前必读） |
 | `docs/DB_INVENTORY.md` | 16 个数据库文件盘点 |
-| `docs/STATS_WRITE_PATH_REPORT.md` | Phase E0 的统计写入口盘点（**行号已过时**，语义以 R2 报告为准） |
+| `docs/STATS_WRITE_PATH_REPORT.md` | Phase E0 的统计写入口盘点（**行号已过时**） |
 | `docs/DOMAIN_AND_ARCHITECTURE_DESIGN.md` | 作者的 Phase C 蓝图（Game 实体 / Service 层） |
 
 ---
 
 ## 六、Git 状态
 
-本轮三个 commit（可单独 revert）：
+分支：`feature/2026-10-28-runtime-restore`（尚未合并到 `main`）。
+
+本轮提交（可单独 revert）：
 
 ```text
-6554c1f fix: 收窄 PUT /api/players 为 metadata-only
-07831a0 fix: 修复「三振」字段重复键导致的数据丢失
-b2ccc3c feat: 新增批量录入界面 —— 粘贴 box score 一次写入整场比赛
+fix: 统计写入路径修正 + 安全加固（指标引擎 / 导入路径 / 局数口径）  ← R3
+feat: PDF 解析器改用列坐标                                     ← R3
+test: 新增 R3 测试与 PDF 校验工具                                ← R3
+fix: 修 app.py 缺 import re 导致上传接口 500
+fix: cleanup_db 部首映射表错位（改用 Unicode NFKC）
+feat: 导入批次原子事务 + 显式别名 + 守备失误/牺牲打解析
+feat: 热点表索引 + 迁移脚本
+feat: 自动备份 / 迁移比对 / 安全端到端验证脚本
+chore: ruff + CI + 清理弃用 API 与重复 fixture
+docs: R3/R4 阶段报告 + README/API_CONTRACT 同步
 ```
 
-分支：`feature/2026-10-28-runtime-restore`（尚未合并到 `main`）。
 接手的人从 `main` 切分支：
 
 ```bash
