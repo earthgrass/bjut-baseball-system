@@ -29,6 +29,14 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+# 指标公式统一走 metrics.py（Phase R4）—— 这份脚本以前自己抄了一份，
+# 而且抄错了两处：OBP 分母漏了牺牲触击(SH)、ERA/WHIP 用局数**字面值**
+# （本项目的 box score 用中文记法 .1 = 1/3 局）。
+from metrics import (  # noqa: E402
+    batting_average, total_bases, slugging_percentage,
+    on_base_percentage, ops, era, whip, strike_percentage,
+)
+
 
 ROOT = Path(__file__).resolve().parent
 DB_PATH = ROOT / 'instance' / 'baseball_players.db'
@@ -135,21 +143,20 @@ def calculate_fielder_metrics(values: dict[str, object]) -> dict[str, float | in
     triples = int(values.get('triples') or 0)
     home_runs = int(values.get('home_runs_batting') or 0)
 
-    singles = max(hits - doubles - triples - home_runs, 0)
-    total_bases = singles + doubles * 2 + triples * 3 + home_runs * 4
-    plate_appearances = at_bats + walks + hit_by_pitch + sacrifice_flys
+    tb = total_bases(hits, doubles, triples, home_runs)
+    sacrifice_hits = int(values.get('sacrifice_hits') or 0)
 
-    batting_average = round(hits / at_bats, 3) if at_bats > 0 else 0.0
-    slugging_percentage = round(total_bases / at_bats, 3) if at_bats > 0 else 0.0
-    on_base_percentage = round((hits + walks + hit_by_pitch) / plate_appearances, 3) if plate_appearances > 0 else 0.0
-    ops = round(on_base_percentage + slugging_percentage, 3)
+    avg = batting_average(hits, at_bats)
+    slg = slugging_percentage(tb, at_bats)
+    obp = on_base_percentage(hits, walks, hit_by_pitch, sacrifice_flys,
+                             sacrifice_hits, at_bats)
 
     return {
-        'total_bases': total_bases,
-        'batting_average': batting_average,
-        'slugging_percentage': slugging_percentage,
-        'on_base_percentage': on_base_percentage,
-        'ops': ops,
+        'total_bases': tb,
+        'batting_average': avg,
+        'slugging_percentage': slg,
+        'on_base_percentage': obp,
+        'ops': ops(obp, slg),
     }
 
 
@@ -161,14 +168,14 @@ def calculate_pitcher_metrics(values: dict[str, object]) -> dict[str, float]:
     pitches = int(values.get('pitches') or 0)
     strikes = int(values.get('strikes') or 0)
 
-    era = round((earned_runs * 9) / innings, 2) if innings > 0 else 0.0
-    whip = round((walks_allowed + hits_allowed) / innings, 2) if innings > 0 else 0.0
-    strike_percentage = round((strikes / pitches) * 100, 1) if pitches > 0 else 0.0
-
+    # ⚠️ 局数：legacy 列是**各场记法字面值之和**，不能整体换算
+    #    （见 metrics.py 的说明：中文记法必须逐条换算才准）。
+    #    这里的 ERA/WHIP 只是迁移时的临时值；真正生效的值由应用侧
+    #    rebuild_player_stats() 从 game_records 逐条重算得出。
     return {
-        'era': era,
-        'whip': whip,
-        'strike_percentage': strike_percentage,
+        'era': era(earned_runs, innings),
+        'whip': whip(hits_allowed, walks_allowed, innings),
+        'strike_percentage': strike_percentage(strikes, pitches),
     }
 
 
