@@ -53,7 +53,7 @@ def drift_report():
                 expected = db.session.query(
                     func.coalesce(func.sum(getattr(GameRecord, agg)), 0)).filter(
                     GameRecord.player_id == player.id,
-                    GameRecord.is_pitching_record == False).scalar()
+                    GameRecord.is_pitching_record.is_(False)).scalar()
                 actual = getattr(fp, column) or 0
                 if actual != expected:
                     rows.append((player.name, 'fielder.' + column, actual, expected))
@@ -70,7 +70,7 @@ def drift_report():
                 expected = db.session.query(
                     func.coalesce(func.sum(getattr(GameRecord, agg)), 0)).filter(
                     GameRecord.player_id == player.id,
-                    GameRecord.is_pitching_record == True).scalar()
+                    GameRecord.is_pitching_record.is_(True)).scalar()
                 actual = getattr(pp, column) or 0
                 if actual != expected:
                     rows.append((player.name, 'pitcher.' + column, actual, expected))

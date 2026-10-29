@@ -7,7 +7,6 @@ Database forensics — Phase E0.5 (revised)
 用法：python scripts/db_forensics.py
 """
 import sqlite3
-import sys
 from pathlib import Path
 
 # 优先用 backup（数据完整）；如果 real DB 有表就用 real DB
@@ -192,8 +191,8 @@ def main():
     fp = cur.execute("SELECT * FROM fielder_profiles WHERE player_id = 28").fetchone()
     if fp:
         print(f'  player 28 fielder_profile: AB={fp["at_bats_total"]}, H={fp["hits_total"]}')
-        print(f'  Both records contribute at_bats=0, hits=0 → stats UNCHANGED whether 1 or 2 records.')
-        print(f'  → Cleanup or not, derived stats are equivalent.')
+        print('  Both records contribute at_bats=0, hits=0 → stats UNCHANGED whether 1 or 2 records.')
+        print('  → Cleanup or not, derived stats are equivalent.')
 
     # ===== D. Invariant check =====
     print('\n' + '=' * 70)

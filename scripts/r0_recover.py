@@ -18,7 +18,6 @@ Phase R0 Recovery Script
 输出：recovery/recovered_pre_incident.db
 """
 import sqlite3
-import os
 import sys
 from pathlib import Path
 
