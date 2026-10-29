@@ -60,6 +60,14 @@ from database import (
 )
 from config import get_config
 
+# 指标公式统一入口 —— 全项目只有这一份（Phase R3）
+from metrics import (
+    innings_to_true,
+    era,
+    whip,
+    strike_percentage,
+)
+
 # 配置日志：所有关键事件写到 stderr（适合 docker / 平台日志收集）
 logging.basicConfig(
     level=logging.INFO,
@@ -1288,7 +1296,9 @@ def view_pdf(filepath):
         })
         
     except Exception as e:
-        return jsonify({'error': f'读取文件失败: {str(e)}'}), 500
+        # 不回显异常原文（含服务器绝对路径）；详情写服务端日志
+        logger.exception('读取 PDF 文件失败')
+        return jsonify({'error': '读取文件失败'}), 500
 
 # 新增：对局信息相关路由
 @app.route('/matchup_stats')
@@ -1362,16 +1372,17 @@ def _serialize_batting_matchup_record(record, player=None):
 
 
 def _serialize_pitching_matchup_record(record, player=None):
-    innings_pitched = record.innings_pitched or 0.0
+    # 库里存的是记法局数字面值（1.1 = 1⅓ 局），单场 ERA/WHIP 要用真实局数
+    innings_pitched = innings_to_true(record.innings_pitched or 0.0)
     hits_allowed = record.hits_allowed or 0
     walks_allowed = record.walks_allowed or 0
     earned_runs = record.earned_runs or 0
     pitches = record.pitches or 0
     strikes = record.strikes or 0
 
-    era = round((earned_runs * 9) / innings_pitched, 2) if innings_pitched > 0 else 0.0
-    whip = round((hits_allowed + walks_allowed) / innings_pitched, 2) if innings_pitched > 0 else 0.0
-    strike_percentage = round((strikes / pitches) * 100, 1) if pitches > 0 else 0.0
+    era_value = era(earned_runs, innings_pitched)
+    whip_value = whip(hits_allowed, walks_allowed, innings_pitched)
+    strike_pct = strike_percentage(strikes, pitches)
 
     result_tags = []
     if record.win:
@@ -1398,9 +1409,9 @@ def _serialize_pitching_matchup_record(record, player=None):
         'pitches': pitches,
         'strikes': strikes,
         'batters_faced': record.batters_faced or 0,
-        'strike_percentage': strike_percentage,
-        'era': era,
-        'whip': whip,
+        'strike_percentage': strike_pct,
+        'era': era_value,
+        'whip': whip_value,
         'result_text': ' / '.join(result_tags) if result_tags else '-',
     }
 
@@ -1467,7 +1478,9 @@ def _summarize_pitching_records(records):
     }
 
     for record in records:
-        summary['innings_pitched'] += record['innings_pitched']
+        # 逐条换算局数（库里存的是记法字面值 1.1 = 1⅓ 局），
+        # 不能对合计换算 —— 各场小数位相加可能 ≥10 而进位。见 metrics.py
+        summary['innings_pitched'] += innings_to_true(record['innings_pitched'])
         summary['hits_allowed'] += record['hits_allowed']
         summary['runs_allowed'] += record['runs_allowed']
         summary['earned_runs'] += record['earned_runs']
@@ -1482,14 +1495,11 @@ def _summarize_pitching_records(records):
         summary['saves'] += 1 if '救援' in record['result_text'] else 0
 
     if summary['innings_pitched'] > 0:
-        summary['era'] = round((summary['earned_runs'] * 9) / summary['innings_pitched'], 2)
-        summary['whip'] = round(
-            (summary['hits_allowed'] + summary['walks_allowed']) / summary['innings_pitched'],
-            2
-        )
+        summary['era'] = era(summary['earned_runs'], summary['innings_pitched'])
+        summary['whip'] = whip(summary['hits_allowed'], summary['walks_allowed'],
+                               summary['innings_pitched'])
 
-    if summary['pitches'] > 0:
-        summary['strike_percentage'] = round((summary['strikes'] / summary['pitches']) * 100, 1)
+    summary['strike_percentage'] = strike_percentage(summary['strikes'], summary['pitches'])
 
     return summary
 
@@ -1735,7 +1745,7 @@ def api_parse_pdf(filepath):
         return jsonify({'error': '文件不存在'}), 404
 
     try:
-        from pdf_parser import parse_pdf
+        from pdf_ingest import parse_pdf
         result = parse_pdf(full_path)
         return jsonify(result)
     except Exception as e:
@@ -1773,7 +1783,7 @@ def api_import_one_pdf():
         return jsonify({'error': '文件不存在'}), 404
 
     try:
-        from pdf_parser import parse_pdf
+        from pdf_ingest import parse_pdf
         from import_pdfs import import_game_record
         parsed = parse_pdf(full_path)
         if 'error' in parsed:
@@ -1802,19 +1812,43 @@ def api_upload_pdf():
     if not file.filename.lower().endswith('.pdf'):
         return jsonify({'error': '只支持PDF文件'}), 400
 
-    # 保存上传的文件到临时目录
+    # 保存上传的文件到 data/uploads/
     upload_dir = os.path.join(PROJECT_ROOT, 'data', 'uploads')
     os.makedirs(upload_dir, exist_ok=True)
 
-    from werkzeug.utils import secure_filename
-    safe_name = secure_filename(file.filename)
-    if not safe_name:
-        safe_name = 'upload.pdf'
+    # 文件名处理：
+    #   - **保留中文**（secure_filename 会把中文全抹掉，
+    #     本项目的 PDF 全是中文名，抹掉后全都变成同一个名字而互相覆盖）
+    #   - 去掉目录成分与控制字符，防路径穿越
+    #   - 同名时加序号，不覆盖已有文件
+    original = os.path.basename(file.filename or '').strip()
+    original = re.sub(r'[\x00-\x1f\x7f/\\:*?"<>|]', '_', original).strip('. ')
+    if not original:
+        original = 'upload.pdf'
+    safe_name = original
+    stem, ext = os.path.splitext(original)
+    counter = 1
+    while os.path.exists(os.path.join(upload_dir, safe_name)):
+        counter += 1
+        safe_name = '%s(%d)%s' % (stem, counter, ext)
     filepath = os.path.join(upload_dir, safe_name)
     file.save(filepath)
 
+    # 魔数校验：扩展名改成 .pdf 不代表真是 PDF
     try:
-        from pdf_parser import parse_pdf
+        with open(filepath, 'rb') as fh:
+            magic = fh.read(5)
+        if magic != b'%PDF-':
+            os.remove(filepath)
+            return jsonify({'error': '文件内容不是有效的 PDF'}), 400
+    except Exception:
+        logger.exception('校验上传文件失败')
+        if os.path.exists(filepath):
+            os.remove(filepath)
+        return jsonify({'error': '文件校验失败'}), 400
+
+    try:
+        from pdf_ingest import parse_pdf
         from import_pdfs import import_game_record
         parsed = parse_pdf(filepath)
 
@@ -1862,7 +1896,10 @@ def api_upload_pdf():
 
         return jsonify({
             'status': 'parsed',
-            'filepath': filepath,
+            # 返回**相对 data/ 的路径**（如 'uploads/xxx.pdf'）——
+            # confirm_import 会用 _safe_data_path() 校验它，
+            # 不接受也不下发服务器绝对路径。
+            'filepath': os.path.relpath(filepath, os.path.join(PROJECT_ROOT, 'data')),
             'game_date': parsed.get('game_date'),
             'opponent': parsed.get('opponent'),
             'batting': batting_preview,
@@ -1870,9 +1907,9 @@ def api_upload_pdf():
         })
 
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': f'解析PDF失败: {str(e)}'}), 500
+        # 不回显异常原文（含服务器绝对路径）；详情写服务端日志
+        logger.exception('解析 PDF 失败')
+        return jsonify({'error': '解析PDF失败'}), 500
 
 
 @app.route('/api/pdf/confirm_import', methods=['POST'])
@@ -1884,13 +1921,20 @@ def api_confirm_import():
     if not filepath:
         return jsonify({'error': '缺少文件路径'}), 400
 
-    if not os.path.exists(filepath):
+    # ⚠️ 必须走 _safe_data_path —— 其它 PDF 路由都做了，唯独这里没做，
+    # 等于 admin 可以让系统解析服务器上的任意文件。
+    try:
+        full_path = _safe_data_path(filepath)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+
+    if not os.path.exists(full_path):
         return jsonify({'error': '文件不存在'}), 404
 
     try:
-        from pdf_parser import parse_pdf
+        from pdf_ingest import parse_pdf
         from import_pdfs import import_game_record
-        parsed = parse_pdf(filepath)
+        parsed = parse_pdf(full_path)
         if 'error' in parsed:
             return jsonify({'error': parsed['error']}), 400
 

@@ -24,6 +24,9 @@ class Config:
     # CSRF
     WTF_CSRF_TIME_LIMIT = 60 * 60 * 4  # 4 小时
 
+    # 上传大小上限（Phase R3 安全加固）—— 防止超大文件撑爆磁盘
+    MAX_CONTENT_LENGTH = 20 * 1024 * 1024  # 20 MB
+
 
 class ProductionConfig(Config):
     """生产环境 — 严格"""

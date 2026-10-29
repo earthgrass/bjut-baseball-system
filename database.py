@@ -8,6 +8,19 @@ from sqlalchemy import inspect, text
 from sqlalchemy.ext.hybrid import hybrid_property
 from werkzeug.security import generate_password_hash, check_password_hash
 
+# 指标公式统一入口 —— 全项目只有这一份（Phase R3）
+from metrics import (
+    innings_to_true,
+    batting_average,
+    total_bases,
+    slugging_percentage,
+    on_base_percentage,
+    ops,
+    era,
+    whip,
+    strike_percentage,
+)
+
 db = SQLAlchemy()
 
 DEFAULT_POSITIONS = [
@@ -337,32 +350,19 @@ class FielderProfile(db.Model):
         self.walks_total = self.walks_total or 0
         self.hit_by_pitch = self.hit_by_pitch or 0
         self.sacrifice_flys = self.sacrifice_flys or 0
+        self.sacrifice_hits = self.sacrifice_hits or 0
         self.doubles = self.doubles or 0
         self.triples = self.triples or 0
         self.home_runs_batting = self.home_runs_batting or 0
 
-        if self.at_bats_total > 0:
-            self.batting_average = round(self.hits_total / self.at_bats_total, 3)
-        else:
-            self.batting_average = 0.0
-
-        singles = self.hits_total - self.doubles - self.triples - self.home_runs_batting
-        singles = max(singles, 0)
-        self.total_bases = singles + (self.doubles * 2) + (self.triples * 3) + (self.home_runs_batting * 4)
-
-        if self.at_bats_total > 0:
-            self.slugging_percentage = round(self.total_bases / self.at_bats_total, 3)
-        else:
-            self.slugging_percentage = 0.0
-
-        plate_appearances = self.at_bats_total + self.walks_total + self.hit_by_pitch + self.sacrifice_flys
-        if plate_appearances > 0:
-            numerator = self.hits_total + self.walks_total + self.hit_by_pitch
-            self.on_base_percentage = round(numerator / plate_appearances, 3)
-        else:
-            self.on_base_percentage = 0.0
-
-        self.ops = round(self.on_base_percentage + self.slugging_percentage, 3)
+        self.batting_average = batting_average(self.hits_total, self.at_bats_total)
+        self.total_bases = total_bases(self.hits_total, self.doubles,
+                                        self.triples, self.home_runs_batting)
+        self.slugging_percentage = slugging_percentage(self.total_bases, self.at_bats_total)
+        self.on_base_percentage = on_base_percentage(
+            self.hits_total, self.walks_total, self.hit_by_pitch,
+            self.sacrifice_flys, self.sacrifice_hits, self.at_bats_total)
+        self.ops = ops(self.on_base_percentage, self.slugging_percentage)
 
     def to_dict(self):
         return {
@@ -402,20 +402,12 @@ class PitcherProfile(db.Model):
         self.pitches = self.pitches or 0
         self.strikes = self.strikes or 0
 
-        if self.innings_pitched_total > 0:
-            self.era = round((self.earned_runs_total * 9) / self.innings_pitched_total, 2)
-            self.whip = round(
-                (self.walks_allowed_total + self.hits_allowed_total) / self.innings_pitched_total,
-                2
-            )
-        else:
-            self.era = 0.0
-            self.whip = 0.0
-
-        if self.pitches > 0:
-            self.strike_percentage = round((self.strikes / self.pitches) * 100, 1)
-        else:
-            self.strike_percentage = 0.0
+        # innings_pitched_total 已经是**真实局数**（聚合时逐条换算过，见
+        # _accumulate_record），所以这里可以直接用。
+        self.era = era(self.earned_runs_total, self.innings_pitched_total)
+        self.whip = whip(self.hits_allowed_total, self.walks_allowed_total,
+                         self.innings_pitched_total)
+        self.strike_percentage = strike_percentage(self.strikes, self.pitches)
 
     def to_dict(self):
         return {
@@ -519,11 +511,17 @@ def _new_agg():
 
 
 def _accumulate_record(agg, record):
-    """把一条 GameRecord 累加进聚合结果（打击/投球靠 is_pitching_record 区分）。"""
+    """把一条 GameRecord 累加进聚合结果（打击/投球靠 is_pitching_record 区分）。
+
+    ⚠️ 局数必须**逐条**换算：库里存的是记法字面值（1.1 = 1⅓ 局），
+    而 ERA/WHIP 要求真实局数。逐条换算后再求和，
+    不能对合计换算（各场小数位相加可能 ≥10 而进位）。
+    详见 metrics.py 的说明。
+    """
     if record.is_pitching_record:
         agg['is_pitcher'] = True
         p = agg['pitching']
-        p['innings_pitched'] += record.innings_pitched or 0
+        p['innings_pitched'] += innings_to_true(record.innings_pitched)
         p['hits_allowed'] += record.hits_allowed or 0
         p['runs_allowed'] += record.runs_allowed or 0
         p['earned_runs'] += record.earned_runs or 0
@@ -658,14 +656,63 @@ def sync_stats_from_game_records():
 
 
 def init_db(app):
-    """初始化数据库并执行兼容迁移。"""
+    """初始化数据库并执行兼容迁移。
+
+    ⚠️ 统计档案**不在启动时重算**（Phase R3 改）。
+    规范 §16「禁止启动自动修 Stats」、§61「检测可以自动，修复必须显式」：
+    启动时全量重算会把 `game_records` 的真实漂移**静默抹平** ——
+    bug 被掩盖而不是被暴露；而且每次启动都改库，
+    生产库的内容会在无人察觉的情况下变化（实测：改一次指标公式，
+    下一次跑测试就把它写进生产库了）。
+
+    现在启动只做 **audit**：发现档案与 game_records 不一致就写日志报告，
+    要修由人显式执行（`scripts/rebuild_stats.py` 或 API）。
+    """
     db.init_app(app)
     with app.app_context():
         db.create_all()
         init_positions()
         migrate_legacy_player_stats()
-        sync_stats_from_game_records()
+        drift = audit_stats_drift()
+        if drift:
+            import logging
+            logging.getLogger('baseball').warning(
+                '统计档案与 game_records 不一致（%d 处），已跳过自动重算。'
+                '请显式运行 scripts/rebuild_stats.py 修复。', drift)
         init_default_admin()
+
+
+def audit_stats_drift():
+    """检查「档案 == SUM(game_records)」，返回不一致的字段数（只读，不改库）。
+
+    这是规范 §16 要求的「自动审计，显式修复」。
+    """
+    from sqlalchemy import func
+    drift = 0
+    for player in Player.query.all():
+        fp = player.fielder_profile
+        if fp:
+            for column, agg in (('at_bats_total', 'at_bats'), ('hits_total', 'hits'),
+                                ('rbi_total', 'rbi'), ('walks_total', 'walks')):
+                expected = db.session.query(
+                    func.coalesce(func.sum(getattr(GameRecord, agg)), 0)).filter(
+                    GameRecord.player_id == player.id,
+                    GameRecord.is_pitching_record == False).scalar()
+                if (getattr(fp, column) or 0) != expected:
+                    drift += 1
+        pp = player.pitcher_profile
+        if pp:
+            expected = db.session.query(
+                func.coalesce(func.sum(GameRecord.innings_pitched), 0)).filter(
+                GameRecord.player_id == player.id,
+                GameRecord.is_pitching_record == True).scalar()
+            true_innings = 0.0
+            for record in GameRecord.query.filter_by(
+                    player_id=player.id, is_pitching_record=True).all():
+                true_innings += innings_to_true(record.innings_pitched)
+            if abs((pp.innings_pitched_total or 0.0) - true_innings) > 1e-6:
+                drift += 1
+    return drift
 
 
 def init_positions():
