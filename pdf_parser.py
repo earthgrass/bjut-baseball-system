@@ -114,7 +114,7 @@ def parse_pdf(filepath):
             if text:
                 full_text += text + '\n'
         pdf.close()
-    except Exception as e:
+    except Exception:
         # ⚠️ 不要把异常原文回给浏览器 —— 里面含服务器绝对路径。
         # 详细原因写服务端日志（见下），客户端只看到固定文案。
         import logging
@@ -254,7 +254,7 @@ def _parse_batting(text, my_team_display):
     in_batting = False
     my_team_section = False
 
-    for i, line in enumerate(lines):
+    for _i, line in enumerate(lines):
         line_stripped = line.strip()
 
         # 检测 BATTING 标记
@@ -450,7 +450,7 @@ def _parse_pitching(text, my_team_display):
     in_pitching = False
     my_team_section = None
 
-    for i, line in enumerate(lines):
+    for _i, line in enumerate(lines):
         line_stripped = line.strip()
 
         if line_stripped == 'PITCHING':
@@ -645,7 +645,10 @@ def _split_tag_sections(text):
     result = {}
     # 匹配所有 "TAG: content" 模式
     # ⚠️ 3B 必须在内：少了它，整段 3B 数据会被并进 2B 段里（三垒打全丢）
-    pattern = r'(2B|3B|HR|TB|SB|CS|HBP|LOB|E|BF|WP|P-S|W|L|S):\s*'
+    # ⚠️ SF 必须在 S 前面：否则 "SF:" 匹配不上（'S' 后面跟的是 'F' 不是 ':'）
+    # ⚠️ 单字母标签（E / W / L / S）加 (?<![A-Za-z]) 前视：
+    #    否则 "HOME:" / "TIME:" 里的 "E:" 会被当成失误标签，把内容切错。
+    pattern = (r'(?<![A-Za-z])(2B|3B|HR|TB|SB|CS|HBP|LOB|SF|E|BF|WP|P-S|W|L|S):\s*')
     positions = [(m.start(), m.group(1)) for m in re.finditer(pattern, text)]
 
     for i, (pos, tag) in enumerate(positions):

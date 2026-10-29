@@ -8,7 +8,6 @@ PDF 比赛记录批量导入脚本
 import sys
 import os
 import io
-import json
 import traceback
 
 from datetime import datetime
@@ -18,7 +17,7 @@ from difflib import SequenceMatcher
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from pdf_ingest import parse_pdf
-from database import (db, Player, GameRecord, Position, init_positions,
+from database import (db, Player, GameRecord, init_positions,
                        rebuild_player_stats)
 from app import app  # 引入 Flask app 以使用其数据库
 
@@ -32,6 +31,15 @@ if __name__ == '__main__':
 
 
 # ---------- 模糊匹配 ----------
+
+# PDF 里同一个人的两种写法（业务方已确认，2026-10-29）：
+#   '欧阳' 与 '欧阳翦' 是**同一个人**（2024-11-16 vs 北京交通大学的 box score
+#   里，同一件 23 号在打击表出现两次，一次写 '欧阳'（RF）、一次写 '欧阳翦'（P））。
+# 显式别名优先于模糊匹配 —— 0.8 的相似度是启发式，不该承担「同一人」的判断；
+# 走模糊匹配也照样会出现在导入报告里，不静默。
+PLAYER_NAME_ALIASES = {
+    '欧阳': '欧阳翦',
+}
 
 
 def _fuzzy_match_name(parsed_name, threshold=0.6):
@@ -72,15 +80,27 @@ def find_or_create_player(name, jersey_number=None, position=None, allow_create=
     if player:
         return player, False  # 已存在
 
-    # 2. 模糊匹配
+    # 2. 显式别名 —— 业务方确认过的「同一个人」
+    alias_target = PLAYER_NAME_ALIASES.get(name)
+    if alias_target:
+        player = Player.query.filter_by(name=alias_target).first()
+        if player:
+            _FUZZY_MATCHES.append({
+                'parsed': name, 'matched': player.name,
+                'score': 1.0, 'kind': 'alias'
+            })
+            return player, False
+
+    # 3. 模糊匹配
     fuzzy, fuzzy_score = _fuzzy_match_name(name)
     if fuzzy:
         _FUZZY_MATCHES.append({
-            'parsed': name, 'matched': fuzzy.name, 'score': round(fuzzy_score, 3)
+            'parsed': name, 'matched': fuzzy.name,
+            'score': round(fuzzy_score, 3), 'kind': 'fuzzy'
         })
         return fuzzy, False
 
-    # 3. 创建新球员
+    # 4. 创建新球员
     if not allow_create:
         return None, False
 
@@ -114,7 +134,8 @@ _FUZZY_MATCHES = []
 _UNKNOWN_NAMES = []
 
 
-def import_game_record(result, dry_run=False, replace=False, allow_new_players=False):
+def import_game_record(result, dry_run=False, replace=False,
+                       allow_new_players=False, commit=True):
     """导入单场比赛的所有数据。
 
     写入语义（Phase R3）：
@@ -132,6 +153,12 @@ def import_game_record(result, dry_run=False, replace=False, allow_new_players=F
     `allow_new_players=False`（默认）：
         解析出的姓名在队里找不到时**不建新球员**，记入 unknown_names 并跳过。
         旧版会为乱码名字凭空建球员（实测造出 '齐佳王佳帅'/'孙世铎'/'子非陈'）。
+
+    `commit=False`：
+        不在本场结束时提交，交给调用方统一提交（见 `import_all_pdfs` 的
+        `atomic=True`）。规范 §28 要求一次批量导入是**一个事务**：
+        BEGIN → 写全部场次 → COMMIT，任何一步失败整体 ROLLBACK，
+        而不是「场 1 提交、场 2 提交、场 3 失败」这种半截状态。
     """
     game_date = result.get('game_date')
     opponent = result.get('opponent', '未知')
@@ -153,7 +180,6 @@ def import_game_record(result, dry_run=False, replace=False, allow_new_players=F
         old_records = GameRecord.query.filter_by(
             game_date=game_date_obj, opponent=opponent).all()
         replaced = len(old_records)
-        touched = {r.player_id for r in old_records}
         for record in old_records:
             db.session.delete(record)
         db.session.flush()
@@ -201,6 +227,10 @@ def import_game_record(result, dry_run=False, replace=False, allow_new_players=F
                 stolen_bases=batter['stolen_bases'],
                 caught_stealing=batter['caught_stealing'],
                 hit_by_pitch=batter['hit_by_pitch'],
+                # 守备失误 / 牺牲打 —— Phase R4 才有数据源（审计 #11）
+                sacrifice_flys=batter.get('sacrifice_flys', 0) or 0,
+                sacrifice_hits=batter.get('sacrifice_hits', 0) or 0,
+                errors_fielding=batter.get('errors_fielding', 0) or 0,
             )
             db.session.add(record)
         imported_batting += 1
@@ -269,7 +299,11 @@ def import_game_record(result, dry_run=False, replace=False, allow_new_players=F
             touched_ids.add(row[0])
         for pid in touched_ids:
             rebuild_player_stats(pid)
-        db.session.commit()
+        if commit:
+            db.session.commit()
+        else:
+            # 交给调用方统一提交（规范 §28：一个批次一个事务）
+            db.session.flush()
 
     # 本次导入产生的模糊匹配（打上来源文件，便于报告里定位）
     fuzzy = []
@@ -293,11 +327,16 @@ def import_game_record(result, dry_run=False, replace=False, allow_new_players=F
     }
 
 
-def import_all_pdfs(dry_run=False, replace=False, allow_new_players=False):
+def import_all_pdfs(dry_run=False, replace=False, allow_new_players=False,
+                    atomic=True):
     """导入 data/ 目录下所有 PDF 文件。
 
     replace=True → 覆盖模式：每场先删旧记录再写新解析的数据。
     allow_new_players=True → 允许为未知姓名建新球员（默认关）。
+    atomic=True（默认）→ 整个批次是**一个事务**：
+        规范 §28「PDF Import 事务模型」要求 BEGIN → 写全部场次 → COMMIT，
+        任何一步失败就整体 ROLLBACK，不留「前 5 场已提交、第 6 场失败」的半截状态。
+        atomic=False 保留旧的「每场各提交一次」行为（仅供调试对照）。
     """
     data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
     if not os.path.exists(data_dir):
@@ -306,13 +345,15 @@ def import_all_pdfs(dry_run=False, replace=False, allow_new_players=False):
 
     results = []
     pdf_files = []
-    for root, dirs, files in os.walk(data_dir):
+    for root, _dirs, files in os.walk(data_dir):
         for f in files:
             if f.lower().endswith('.pdf'):
                 pdf_files.append(os.path.join(root, f))
 
     pdf_files.sort()
     print(f"找到 {len(pdf_files)} 个 PDF 文件")
+    if atomic and not dry_run:
+        print("事务模式: 整个批次一次提交（失败整体回滚）")
 
     for filepath in pdf_files:
         filename = os.path.basename(filepath)
@@ -325,6 +366,8 @@ def import_all_pdfs(dry_run=False, replace=False, allow_new_players=False):
             if 'error' in parsed:
                 print(f"  错误: {parsed['error']}")
                 results.append({'file': filename, 'status': 'error', 'error': parsed['error']})
+                if atomic and not dry_run:
+                    raise RuntimeError(f'{filename} 解析失败: {parsed["error"]}')
                 continue
 
             print(f"  日期: {parsed.get('game_date')}")
@@ -333,13 +376,14 @@ def import_all_pdfs(dry_run=False, replace=False, allow_new_players=False):
             print(f"  投手数据: {len(parsed.get('my_team_pitching', []))} 条")
 
             if not parsed.get('my_team_batting') and not parsed.get('my_team_pitching'):
-                print(f"  跳过: 无有效数据")
+                print("  跳过: 无有效数据")
                 results.append({'file': filename, 'status': 'skip', 'reason': '无有效数据'})
                 continue
 
             import_result = import_game_record(
                 parsed, dry_run=dry_run, replace=replace,
-                allow_new_players=allow_new_players)
+                allow_new_players=allow_new_players,
+                commit=not (atomic and not dry_run))
 
             for detail in import_result.get('details', []):
                 print(detail)
@@ -355,7 +399,8 @@ def import_all_pdfs(dry_run=False, replace=False, allow_new_players=False):
                     print(f"  ⚠ 未知姓名(已跳过, 未建球员): {names}")
                 if import_result.get('fuzzy_matches'):
                     for m in import_result['fuzzy_matches']:
-                        print(f"  ⚠ 模糊匹配: PDF 里的「{m['parsed']}」并入了"
+                        kind = '别名(业务方已确认同一人)' if m.get('kind') == 'alias' else '模糊匹配'
+                        print(f"  ⚠ {kind}: PDF 里的「{m['parsed']}」并入了"
                               f"「{m['matched']}」(相似度 {m['score']})")
                 if import_result['skipped']:
                     print(f"  跳过(重复/未知): {import_result['skipped']} 条")
@@ -369,6 +414,16 @@ def import_all_pdfs(dry_run=False, replace=False, allow_new_players=False):
             print(f"  异常: {e}")
             traceback.print_exc()
             results.append({'file': filename, 'status': 'error', 'error': str(e)})
+            if atomic and not dry_run:
+                # 规范 §28：整体回滚，不留半截状态
+                db.session.rollback()
+                print(f"\n✗ 批次失败，已回滚全部改动（{len(pdf_files)} 份 PDF 一次提交）")
+                raise
+
+    # ── 一次提交（原子模式）──
+    if atomic and not dry_run:
+        db.session.commit()
+        print(f"\n✓ 整个批次已提交（{len(pdf_files)} 份 PDF 一个事务）")
 
     # 汇总
     total_batting = sum(r.get('batting', 0) for r in results)
@@ -387,7 +442,7 @@ def import_all_pdfs(dry_run=False, replace=False, allow_new_players=False):
             all_fuzzy.setdefault((item['parsed'], item['matched']), set()).add(item['file'])
 
     print(f"\n{'='*60}")
-    print(f"导入完成！")
+    print("导入完成！")
     print(f"  PDF 文件: {len(pdf_files)}")
     print(f"  打击记录: {total_batting}")
     print(f"  投手记录: {total_pitching}")
@@ -403,9 +458,18 @@ def import_all_pdfs(dry_run=False, replace=False, allow_new_players=False):
         for name in sorted(all_unknown):
             print(f"      {name}  <- {', '.join(sorted(all_unknown[name]))}")
     if all_fuzzy:
-        print(f"  ⚠ 模糊匹配 {len(all_fuzzy)} 处（PDF 里的名字并入了队里的人）：")
-        for (parsed, matched), files in sorted(all_fuzzy.items()):
-            print(f"      「{parsed}」 -> 「{matched}」  <- {', '.join(sorted(files))}")
+        alias_items = {k: v for k, v in all_fuzzy.items()
+                       if k[0] in PLAYER_NAME_ALIASES}
+        fuzzy_items = {k: v for k, v in all_fuzzy.items()
+                       if k[0] not in PLAYER_NAME_ALIASES}
+        if alias_items:
+            print(f"  ⚠ 别名合并 {len(alias_items)} 处（业务方已确认是同一个人）：")
+            for (parsed, matched), files in sorted(alias_items.items()):
+                print(f"      「{parsed}」 -> 「{matched}」  <- {', '.join(sorted(files))}")
+        if fuzzy_items:
+            print(f"  ⚠ 模糊匹配 {len(fuzzy_items)} 处（PDF 里的名字并入了队里的人）：")
+            for (parsed, matched), files in sorted(fuzzy_items.items()):
+                print(f"      「{parsed}」 -> 「{matched}」  <- {', '.join(sorted(files))}")
     print(f"{'='*60}")
 
     return results
@@ -415,12 +479,15 @@ if __name__ == '__main__':
     dry_run = '--dry-run' in sys.argv
     replace = '--replace' in sys.argv
     allow_new = '--allow-new-players' in sys.argv
+    atomic = '--no-atomic' not in sys.argv
     if dry_run:
         print("=== 预览模式（不写入数据库）===")
     if replace:
         print("=== 覆盖模式（每场先删旧记录再写入）===")
+    if not atomic:
+        print("=== 非原子模式（每场各提交一次，仅调试用）===")
 
     with app.app_context():
         init_positions()
         import_all_pdfs(dry_run=dry_run, replace=replace,
-                        allow_new_players=allow_new)
+                        allow_new_players=allow_new, atomic=atomic)

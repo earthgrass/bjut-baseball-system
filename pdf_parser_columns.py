@@ -229,6 +229,9 @@ def _make_batting_record(name, jersey_number, position, values):
         'hit_by_pitch': values.get('hit_by_pitch', 0),
         'sacrifice_flys': values.get('sacrifice_flys', 0),
         'sacrifice_hits': values.get('sacrifice_hits', 0),
+        # 守备失误（Phase R4）—— 4 份 2025 年的 box score 里有 "E:" 标签，
+        # 以前没人读它，所以 errors_fielding 永远是 0（审计 #11）。
+        'errors_fielding': values.get('errors_fielding', 0),
     }
 
 
@@ -367,7 +370,6 @@ def parse_pdf(filepath):
         return (left, right) if hdr['ours_left'] else (right, left)
 
     for row in rows:
-        text = row['text'].strip()
         words = row['words']
         wordset = {w['text'] for w in words}
 
@@ -458,6 +460,10 @@ def parse_pdf(filepath):
             left, right = _split_by_boundary(row['words'], boundary)
             our_words.extend(left if ours_left else right)
         _apply_pitching_extras(result['my_team_pitching'], our_words)
+        # 守备失误（E）/ 高飞牺牲打（SF）有时印在**投球附加行**里
+        # （实测 4 份 2025 年的 box score 如此）—— 那是打者的数据，
+        # 不能因为它出现在投球区就丢掉。
+        _apply_fielding_extras(result['my_team_batting'], our_words)
 
     return result
 
@@ -488,6 +494,10 @@ def _apply_extras(batting, words):
         'stolen_bases': ('SB', merged('SB')),
         'caught_stealing': ('CS', merged('CS')),
         'hit_by_pitch': ('HBP', merged('HBP')),
+        # 守备失误（E）与高飞牺牲打（SF）—— Phase R4 补上，
+        # 这两项以前有列没数据源，永远是 0（审计 #11）。
+        'errors_fielding': ('E', merged('E')),
+        'sacrifice_flys': ('SF', merged('SF')),
     }
     for key, (_tag, content) in mapping.items():
         if not content:
@@ -514,6 +524,32 @@ def _apply_extras(batting, words):
         computed = _total_bases(player)
         player['tb_from_pdf'] = expected
         player['tb_matches'] = (computed == expected)
+
+
+def _apply_fielding_extras(batting, words):
+    """守备失误（E）与高飞牺牲打（SF）—— 从**投球附加行**里取。
+
+    为什么单独一个函数：这两项是**打者**的数据，但 box score 常常把它们
+    印在投球区的附加行上（实测 4/17 份 PDF 的 "E:" 在投球行里）。
+    不能把整个投球附加行丢给打击统计 —— 那一行里的 "HBP:" 是**被触身球**
+    （投手的），混进来会把 HBP 安到错误的人身上。
+
+    只取 E / SF 两个标签，其余标签一概不碰。
+    """
+    if not words:
+        return
+    text = ' '.join(w['text'] for w in words)
+    sections = _split_tag_sections(text)
+
+    for key, tag in (('errors_fielding', 'E'), ('sacrifice_flys', 'SF')):
+        content = ', '.join(sections.get(tag, []))
+        if not content:
+            continue
+        counts = _extract_named_counts_from(content)
+        for player in batting:
+            value = counts.get(player['name'])
+            if value is not None:
+                player[key] = value
 
 
 def _total_bases(player):

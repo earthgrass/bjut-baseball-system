@@ -48,6 +48,14 @@ FIELDER_PROFILE_DEFAULTS = {
     'caught_stealing': 0,
     'sacrifice_flys': 0,
     'sacrifice_hits': 0,
+    # ⚠️ 这两个是**历史预留列**（审计 #11）：
+    #    库里有列、API 会返回，但**没有任何写入源** —— 17 份 box score 的
+    #    PDF 里根本没有「失误」「捕逸/触杀」这两项数据（实测标签只有
+    #    AB/R/H/RBI/BB/SO/S/2B/3B/HR/TB/HBP/SB/CS/BF/WP/LOB/W/L），
+    #    所以它们永远是 0，也不参与任何聚合。
+    #    保留它们是因为：删列是一次 schema 迁移（规范 §22「先保留、再转换、
+    #    最后清理」），而收益只是「整洁」——不值得为这个冒数据风险。
+    #    别把它们的 0 当成「真实数据是 0」。
     'errors_fielding': 0,
     'passed_balls': 0,
 }
@@ -89,7 +97,9 @@ LEGACY_PITCHER_FIELDS = [
 player_positions = db.Table(
     'player_positions',
     db.Column('player_id', db.Integer, db.ForeignKey('players.id'), primary_key=True),
-    db.Column('position_id', db.Integer, db.ForeignKey('positions.id'), primary_key=True)
+    db.Column('position_id', db.Integer, db.ForeignKey('positions.id'), primary_key=True),
+    # 复合主键已经给 player_id 建了索引；按位置反查球员（守备位置统计）还需要一个
+    db.Index('ix_player_positions_position', 'position_id'),
 )
 
 
@@ -108,6 +118,14 @@ class Position(db.Model):
 class Player(db.Model):
     """球员主表：只保留基础资料和角色信息。比赛汇总拆到档案表里。"""
     __tablename__ = 'players'
+
+    # 索引（Phase R4）：
+    #   name —— 导入时按名字找球员（find_or_create_player）与前端搜索都走它
+    #   jersey_number —— 报表里按背号查
+    __table_args__ = (
+        db.Index('ix_players_name', 'name'),
+        db.Index('ix_players_jersey_number', 'jersey_number'),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
@@ -420,6 +438,14 @@ class GameRecord(db.Model):
     """单场比赛记录表"""
     __tablename__ = 'game_records'
 
+    # 索引（Phase R4）—— 这是全库最热的表，所有统计聚合都扫它：
+    #   (player_id, is_pitching_record) —— 重建档案时按球员取记录
+    #   (game_date, opponent)            —— 覆盖导入时按「日期+对手」删旧记录
+    __table_args__ = (
+        db.Index('ix_game_records_player', 'player_id', 'is_pitching_record'),
+        db.Index('ix_game_records_game', 'game_date', 'opponent'),
+    )
+
     id = db.Column(db.Integer, primary_key=True)
     player_id = db.Column(db.Integer, db.ForeignKey('players.id'), nullable=False)
     game_date = db.Column(db.Date, nullable=False, default=lambda: datetime.now(timezone.utc).date())
@@ -498,7 +524,8 @@ def _new_agg():
             'at_bats': 0, 'runs': 0, 'hits': 0, 'rbi': 0, 'walks': 0,
             'strikeouts': 0, 'doubles': 0, 'triples': 0, 'home_runs': 0,
             'stolen_bases': 0, 'hit_by_pitch': 0, 'caught_stealing': 0,
-            'sacrifice_flys': 0, 'sacrifice_hits': 0, 'total_bases': 0
+            'sacrifice_flys': 0, 'sacrifice_hits': 0, 'total_bases': 0,
+            'errors_fielding': 0,
         },
         'pitching': {
             'innings_pitched': 0.0, 'hits_allowed': 0, 'runs_allowed': 0,
@@ -549,6 +576,7 @@ def _accumulate_record(agg, record):
         b['caught_stealing'] += record.caught_stealing or 0
         b['sacrifice_flys'] += record.sacrifice_flys or 0
         b['sacrifice_hits'] += record.sacrifice_hits or 0
+        b['errors_fielding'] += record.errors_fielding or 0
     return agg
 
 
@@ -570,6 +598,7 @@ def _apply_agg_to_player(player, agg):
     fp.caught_stealing = b['caught_stealing']
     fp.sacrifice_flys = b['sacrifice_flys']
     fp.sacrifice_hits = b['sacrifice_hits']
+    fp.errors_fielding = b['errors_fielding']
     fp.update_calculated_fields()
 
     if agg['is_pitcher']:
@@ -693,11 +722,13 @@ def audit_stats_drift():
         fp = player.fielder_profile
         if fp:
             for column, agg in (('at_bats_total', 'at_bats'), ('hits_total', 'hits'),
-                                ('rbi_total', 'rbi'), ('walks_total', 'walks')):
+                                ('rbi_total', 'rbi'), ('walks_total', 'walks'),
+                                ('sacrifice_flys', 'sacrifice_flys'),
+                                ('errors_fielding', 'errors_fielding')):
                 expected = db.session.query(
                     func.coalesce(func.sum(getattr(GameRecord, agg)), 0)).filter(
                     GameRecord.player_id == player.id,
-                    GameRecord.is_pitching_record == False).scalar()
+                    GameRecord.is_pitching_record.is_(False)).scalar()
                 if (getattr(fp, column) or 0) != expected:
                     drift += 1
         pp = player.pitcher_profile
@@ -705,7 +736,7 @@ def audit_stats_drift():
             expected = db.session.query(
                 func.coalesce(func.sum(GameRecord.innings_pitched), 0)).filter(
                 GameRecord.player_id == player.id,
-                GameRecord.is_pitching_record == True).scalar()
+                GameRecord.is_pitching_record.is_(True)).scalar()
             true_innings = 0.0
             for record in GameRecord.query.filter_by(
                     player_id=player.id, is_pitching_record=True).all():
