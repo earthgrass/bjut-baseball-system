@@ -115,7 +115,11 @@ def parse_pdf(filepath):
                 full_text += text + '\n'
         pdf.close()
     except Exception as e:
-        result['error'] = f'读取PDF失败: {e}'
+        # ⚠️ 不要把异常原文回给浏览器 —— 里面含服务器绝对路径。
+        # 详细原因写服务端日志（见下），客户端只看到固定文案。
+        import logging
+        logging.getLogger('baseball').exception('PDF 读取失败: %s', filepath)
+        result['error'] = 'PDF 读取失败'
         return result
 
     if not full_text.strip():
@@ -640,7 +644,8 @@ def _split_tag_sections(text):
     """
     result = {}
     # 匹配所有 "TAG: content" 模式
-    pattern = r'(2B|HR|TB|SB|CS|HBP|LOB|E|BF|WP|P-S|W|L|S):\s*'
+    # ⚠️ 3B 必须在内：少了它，整段 3B 数据会被并进 2B 段里（三垒打全丢）
+    pattern = r'(2B|3B|HR|TB|SB|CS|HBP|LOB|E|BF|WP|P-S|W|L|S):\s*'
     positions = [(m.start(), m.group(1)) for m in re.finditer(pattern, text)]
 
     for i, (pos, tag) in enumerate(positions):
