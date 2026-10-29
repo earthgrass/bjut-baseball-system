@@ -9,14 +9,12 @@ PDF Parser characterization tests — Phase E0
   3. parse_pdf() 对不存在文件返回 error dict（baseline behavior）
   4. parse_pdf() 对空文件返回 error dict
 """
-import pytest
 from pdf_parser import (
     parse_pdf,
     _normalize_text,
     _normalize_name,
     _extract_named_counts_from,
     _split_tag_sections,
-    _parse_game_date,
     _parse_opponent_from_filename,
     _parse_date_from_filename,
 )

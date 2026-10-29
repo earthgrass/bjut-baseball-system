@@ -12,8 +12,7 @@ import pytest
 
 from database import Player, GameRecord, db
 from metrics import (
-    innings_to_true, format_innings, era, whip, batting_average,
-    on_base_percentage, total_bases, ops, strike_percentage,
+    innings_to_true, format_innings, era, whip, on_base_percentage, total_bases, ops, strike_percentage,
 )
 
 
@@ -73,11 +72,19 @@ def test_total_bases_and_ops():
 
 
 def test_metrics_module_is_the_only_source():
-    """指标公式只应在 metrics.py 里 —— 其它地方不许再自己算 ERA。"""
+    """指标公式只应在 metrics.py 里 —— 其它地方不许再自己算 ERA。
+
+    扫 Python **和** JS：前端曾有一份 ERA/WHIP/OBP 的拷贝（static/js/script.js），
+    而且用的是**局数字面值**（1.1 当成 1.1 局而不是 1⅓ 局）——
+    网页上预览的 ERA 和服务器存下来的 ERA 对不上。
+    """
     import re
     root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
     offenders = []
-    for name in ['app.py', 'database.py', 'import_pdfs.py']:
+    # metrics.py 是权威来源本身，不在扫描范围内
+    py_files = ['app.py', 'database.py', 'import_pdfs.py', 'cleanup_db.py',
+                'migrate_profiles_sqlite.py', 'sync_data.py']
+    for name in py_files:
         path = os.path.join(root, name)
         if not os.path.exists(path):
             continue
@@ -86,6 +93,17 @@ def test_metrics_module_is_the_only_source():
                 # 形如 earned_runs * 9 / ... 的自算公式
                 if re.search(r'\*\s*9\s*\)\s*/|\*\s*9\s*/', line):
                     offenders.append('%s:%d %s' % (name, lineno, line.strip()))
+    js_dir = os.path.join(root, 'static', 'js')
+    if os.path.isdir(js_dir):
+        for name in sorted(os.listdir(js_dir)):
+            if not name.endswith('.js'):
+                continue
+            path = os.path.join(js_dir, name)
+            with open(path, encoding='utf-8') as fh:
+                for lineno, line in enumerate(fh, 1):
+                    if re.search(r'\*\s*9\s*\)\s*/|\*\s*9\s*/', line):
+                        offenders.append('static/js/%s:%d %s'
+                                         % (name, lineno, line.strip()))
     assert not offenders, '这些地方还在自己算 ERA，应改用 metrics.era：\n' + '\n'.join(offenders)
 
 

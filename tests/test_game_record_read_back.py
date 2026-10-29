@@ -19,7 +19,7 @@ import ast
 import io
 import os
 
-from database import Player, GameRecord, db
+from database import GameRecord, db
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 

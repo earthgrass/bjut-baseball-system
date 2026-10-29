@@ -9,9 +9,6 @@ Matchup characterization tests — Phase E0.5
 - all game records
 - empty result behavior
 """
-import pytest
-from datetime import date
-from database import Player, GameRecord
 
 
 def _create_player(client, **overrides):

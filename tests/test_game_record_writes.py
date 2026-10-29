@@ -4,7 +4,6 @@
 覆盖 2026-10-28 新增的写入能力，并锁定「profile == SUM(game_records)」
 这一核心不变量：任何写操作之后，统计档案都必须与原始记录一致。
 """
-import pytest
 from database import Player, GameRecord, db
 
 
@@ -59,7 +58,7 @@ def test_update_game_record_changes_fields(auth_client):
     assert resp.get_json()['message'] == '比赛记录更新成功'
 
     with auth_client.application.app_context():
-        rec = GameRecord.query.get(rid)
+        rec = db.session.get(GameRecord, rid)
         assert rec.opponent == '北京科技大学'
         assert rec.at_bats == 6
         assert rec.hits == 4
@@ -73,7 +72,7 @@ def test_update_game_record_recomputes_stats(auth_client):
     rid = resp.get_json()['record_id']
 
     with auth_client.application.app_context():
-        p = Player.query.get(pid)
+        p = db.session.get(Player, pid)
         assert p.at_bats_total == 4
         assert p.hits_total == 3
         assert p.batting_average == 0.750
@@ -82,7 +81,7 @@ def test_update_game_record_recomputes_stats(auth_client):
         pid, at_bats=8, hits=2))
 
     with auth_client.application.app_context():
-        p = Player.query.get(pid)
+        p = db.session.get(Player, pid)
         # 不是 4+8=12，而是替换成 8
         assert p.at_bats_total == 8
         assert p.hits_total == 2
@@ -99,7 +98,7 @@ def test_update_game_record_can_change_date_and_opponent(auth_client):
     assert resp.status_code == 200
 
     with auth_client.application.app_context():
-        rec = GameRecord.query.get(rid)
+        rec = db.session.get(GameRecord, rid)
         assert rec.game_date.strftime('%Y-%m-%d') == '2025-11-22'
         assert rec.opponent == '北京交通大学'
 
@@ -115,8 +114,8 @@ def test_update_game_record_can_change_player(auth_client):
     assert resp.status_code == 200
 
     with auth_client.application.app_context():
-        a = Player.query.get(pid_a)
-        b = Player.query.get(pid_b)
+        a = db.session.get(Player, pid_a)
+        b = db.session.get(Player, pid_b)
         assert a.at_bats_total == 0      # 原球员不再有这条记录
         assert b.at_bats_total == 4      # 新球员接手
         assert b.hits_total == 3
@@ -177,10 +176,10 @@ def test_batch_write_creates_all_records(auth_client):
     with auth_client.application.app_context():
         recs = GameRecord.query.filter_by(opponent='北京科技大学').all()
         assert len(recs) == 3
-        p = Player.query.get(pid)
+        p = db.session.get(Player, pid)
         assert p.at_bats_total == 7
         assert p.hits_total == 3
-        pp = Player.query.get(ppid)
+        pp = db.session.get(Player, ppid)
         assert pp.innings_pitched_total == 3.0
         assert pp.strikeouts_total == 6
 
@@ -202,7 +201,7 @@ def test_batch_write_is_all_or_nothing(auth_client):
     with auth_client.application.app_context():
         recs = GameRecord.query.filter_by(opponent='北京科技大学').all()
         assert len(recs) == 0, '失败的批次不应留下任何记录'
-        p = Player.query.get(pid)
+        p = db.session.get(Player, pid)
         assert p.at_bats_total == 0
 
 
@@ -237,7 +236,7 @@ def test_profile_matches_game_records_after_writes(auth_client):
 
     with auth_client.application.app_context():
         from sqlalchemy import func
-        p = Player.query.get(pid)
+        p = db.session.get(Player, pid)
         rec_sum = db.session.query(func.sum(GameRecord.at_bats)).filter(
             GameRecord.player_id == pid).scalar()
         assert p.at_bats_total == rec_sum
@@ -257,7 +256,7 @@ def test_delete_then_stats_are_rebuilt(auth_client):
 
     with auth_client.application.app_context():
         from sqlalchemy import func
-        p = Player.query.get(pid)
+        p = db.session.get(Player, pid)
         rec_sum = db.session.query(func.sum(GameRecord.at_bats)).filter(
             GameRecord.player_id == pid).scalar()
         assert p.at_bats_total == 6

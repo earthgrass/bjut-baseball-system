@@ -1,8 +1,7 @@
 """
 GameRecord characterization tests — Phase E0
 """
-import pytest
-from database import Player, GameRecord
+from database import GameRecord, Player, db
 
 
 def _create_player(client, **overrides):
@@ -37,7 +36,7 @@ def test_add_batting_record(auth_client):
     record_id = resp.get_json()['record_id']
 
     with auth_client.application.app_context():
-        rec = GameRecord.query.get(record_id)
+        rec = db.session.get(GameRecord, record_id)
         assert rec is not None
         assert rec.player_id == pid
         assert rec.opponent == '清华大学'
@@ -47,7 +46,7 @@ def test_add_batting_record(auth_client):
         assert rec.total_bases == (
             (3 - 1 - 0 - 1) * 1 + 1 * 2 + 0 * 3 + 1 * 4
         )
-        p = Player.query.get(pid)
+        p = db.session.get(Player, pid)
         assert p.at_bats_total == 4
         assert p.hits_total == 3
         assert p.rbi_total == 2
@@ -88,7 +87,7 @@ def test_add_pitching_record(auth_client):
     assert resp.status_code == 201
 
     with auth_client.application.app_context():
-        p = Player.query.get(pid)
+        p = db.session.get(Player, pid)
         assert p.innings_pitched_total == 7.0
         assert p.hits_allowed_total == 5
         assert p.earned_runs_total == 1
@@ -130,7 +129,7 @@ def test_multiple_records_for_same_player(auth_client):
     with auth_client.application.app_context():
         records = GameRecord.query.filter_by(player_id=pid).all()
         assert len(records) == 3
-        p = Player.query.get(pid)
+        p = db.session.get(Player, pid)
         assert p.at_bats_total == 12
         assert p.hits_total == 1 + 2 + 3
 
@@ -159,7 +158,7 @@ def test_duplicate_records_allowed(auth_client):
     )
 
     with auth_client.application.app_context():
-        p = Player.query.get(pid)
+        p = db.session.get(Player, pid)
         assert p.hits_total == 2
 
 
@@ -175,7 +174,7 @@ def test_delete_record_subtracts_stats(auth_client):
     rid = add_resp.get_json()['record_id']
 
     with auth_client.application.app_context():
-        p = Player.query.get(pid)
+        p = db.session.get(Player, pid)
         assert p.hits_total == 2
         assert p.rbi_total == 1
 
@@ -183,8 +182,8 @@ def test_delete_record_subtracts_stats(auth_client):
     assert del_resp.status_code == 200
 
     with auth_client.application.app_context():
-        assert GameRecord.query.get(rid) is None
-        p = Player.query.get(pid)
+        assert db.session.get(GameRecord, rid) is None
+        p = db.session.get(Player, pid)
         assert p.hits_total == 0
         assert p.rbi_total == 0
         assert p.at_bats_total == 0

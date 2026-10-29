@@ -2,8 +2,7 @@
 Player characterization tests — Phase E0
 使用 auth_client fixture 自动附加 CSRF header
 """
-import pytest
-from database import Player, Position, FielderProfile, PitcherProfile
+from database import Player, db
 
 
 # ====== 创建 ======
@@ -21,7 +20,7 @@ def test_create_fielder(auth_client):
     player_id = data['player']['id']
 
     with auth_client.application.app_context():
-        p = Player.query.get(player_id)
+        p = db.session.get(Player, player_id)
         assert p is not None
         assert p.name == '张三'
         assert p.jersey_number == '7'
@@ -44,7 +43,7 @@ def test_create_pitcher_auto_gets_pitcher_position(auth_client):
     player_id = resp.get_json()['player']['id']
 
     with auth_client.application.app_context():
-        p = Player.query.get(player_id)
+        p = db.session.get(Player, player_id)
         assert p._is_pitcher is True
         position_names = [pos.name for pos in p.positions]
         assert '投手' in position_names
@@ -133,7 +132,7 @@ def test_update_player(auth_client):
     assert upd_resp.status_code == 200
 
     with auth_client.application.app_context():
-        p = Player.query.get(pid)
+        p = db.session.get(Player, pid)
         assert p.name == '孙八改'
         assert [pos.name for pos in p.positions] == ['三垒手']
         assert p.primary_position == '三垒手'
@@ -171,7 +170,7 @@ def test_update_player_with_stats(auth_client):
     assert 'at_bats_total' in body['rejected_fields']
 
     with auth_client.application.app_context():
-        p = Player.query.get(pid)
+        p = db.session.get(Player, pid)
         assert p.at_bats_total == 0
         assert p.hits_total == 0
         assert p.rbi_total == 0
@@ -197,7 +196,7 @@ def test_delete_player(auth_client):
     assert del_resp.status_code == 200
 
     with auth_client.application.app_context():
-        assert Player.query.get(pid) is None
+        assert db.session.get(Player, pid) is None
 
 
 def test_cannot_delete_last_player(auth_client):

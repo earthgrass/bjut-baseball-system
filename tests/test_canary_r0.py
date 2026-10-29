@@ -6,7 +6,6 @@ Phase R0.10 — Canary test
 import hashlib
 import os
 
-import pytest
 
 REAL_DB = os.path.abspath(os.path.join(os.path.dirname(__file__), '..',
                                         'instance', 'baseball_players.db'))
@@ -30,7 +29,7 @@ def test_canary_real_db_unchanged_after_app_init(app):
     # 触发 DB 操作（test fixture 已经 create_all）
     with app.app_context():
         from database import Player
-        cnt = Player.query.count()
+        _ = Player.query.count()
     sha_after = _real_db_sha256()
     assert sha_before == sha_after, (
         f'!!! REAL DB modified by app fixture !!!\n'

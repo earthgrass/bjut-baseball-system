@@ -13,7 +13,6 @@ Phase R0 强化：
 的 SQLAlchemy engine 执行，把 instance/baseball_players.db 清空。
 """
 import os
-import sys
 import tempfile
 import shutil
 import hashlib
@@ -150,79 +149,6 @@ def app(patch_db_path):
         db.session.remove()
         db.drop_all()
         db.engine.dispose()
-
-
-@pytest.fixture
-def client(app):
-    return app.test_client()
-
-
-@pytest.fixture
-def csrf_token(client):
-    resp = client.get('/login')
-    import re
-    m = re.search(rb'name="csrf_token"\s+value="([^"]+)"', resp.data)
-    assert m, 'CSRF token not found in /login page'
-    return m.group(1).decode()
-
-
-@pytest.fixture
-def admin_logged_in(client, csrf_token):
-    resp = client.post(
-        '/login',
-        data={
-            'username': 'admin',
-            'password': 'testpass',
-            'csrf_token': csrf_token,
-        },
-        follow_redirects=False,
-    )
-    assert resp.status_code == 302, f'Login failed: {resp.status_code} {resp.data[:200]}'
-    return client, csrf_token
-
-
-@pytest.fixture
-def api_csrf_token(client):
-    resp = client.get('/login')
-    import re
-    m = re.search(rb'<meta name="csrf-token" content="([^"]+)"', resp.data)
-    assert m, 'CSRF meta tag not found in /login page'
-    return m.group(1).decode()
-
-
-class CSRFClient:
-    """自动为所有非 GET 请求附加 X-CSRFToken header"""
-    def __init__(self, test_client, csrf_token):
-        self._c = test_client
-        self._token = csrf_token
-
-    def get(self, *args, **kwargs):
-        return self._c.get(*args, **kwargs)
-
-    def post(self, *args, **kwargs):
-        kwargs.setdefault('headers', {})
-        kwargs['headers']['X-CSRFToken'] = self._token
-        return self._c.post(*args, **kwargs)
-
-    def put(self, *args, **kwargs):
-        kwargs.setdefault('headers', {})
-        kwargs['headers']['X-CSRFToken'] = self._token
-        return self._c.put(*args, **kwargs)
-
-    def delete(self, *args, **kwargs):
-        kwargs.setdefault('headers', {})
-        kwargs['headers']['X-CSRFToken'] = self._token
-        return self._c.delete(*args, **kwargs)
-
-    @property
-    def application(self):
-        return self._c.application
-
-
-@pytest.fixture
-def auth_client(admin_logged_in):
-    c, token = admin_logged_in
-    return CSRFClient(c, token)
 
 
 def pytest_sessionfinish(session, exitstatus):
