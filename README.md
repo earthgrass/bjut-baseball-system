@@ -403,7 +403,7 @@ python -m pytest tests/ -q
 # 124 passed
 
 # 前端解析器的单元测试（需要 node）
-node --test tests/js/
+node --test 'tests/js/*.test.js'
 # 25 passed
 
 # 静态检查

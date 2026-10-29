@@ -198,7 +198,7 @@ python -m ruff check .                                 # All checks passed!
 ```text
 124 passed (115 原有 + 9 新增), 13 warnings
 ruff check .  →  All checks passed!
-node --test tests/js/  →  25 passed
+node --test 'tests/js/*.test.js'  →  25 passed
 scripts/validate_pdf_parse.py  →  16/17（唯一不过的那份是源 PDF 自相矛盾）
 scripts/verify_e2e.py  →  30/30
 ```
