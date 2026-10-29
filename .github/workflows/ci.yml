@@ -1,0 +1,87 @@
+name: CI
+
+# Phase R4（审计 #22）—— 项目此前**没有任何 CI**：一次「dict 字面量重复键」
+# 这类 bug 能悄悄溜进来，正是因为没有自动检查。
+#
+# 本 workflow 只做三件事：
+#   1. pytest（测试库在临时目录，生产库不参与 —— 见 tests/conftest.py）
+#   2. node --test（前端纯逻辑单测）
+#   3. ruff check（静态检查）
+# 注意：CI **不会**碰 instance/ 里的任何文件，也不需要 SECRET_KEY 以外的密钥。
+
+on:
+  push:
+    branches: [main, 'feature/**', 'fix/**']
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.11']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install ruff
+
+      - name: Lint (ruff)
+        run: ruff check .
+
+      - name: Unit & API tests (pytest)
+        run: pytest -q
+        env:
+          # 测试用临时库；生产库路径在测试里被 fail-fast 拦掉
+          SECRET_KEY: ci-secret-key-not-used-in-prod
+
+      - name: Front-end unit tests (node)
+        run: node --test tests/js/
+
+  safety:
+    # 「测试绝不碰生产库」这条不变量，值得单独一个 job 来守：
+    # 任何测试如果写了 instance/baseball_players.db，这里立刻红。
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Fingerprint the production DB before the tests
+        run: |
+          mkdir -p instance
+          cp recovery/recovered_pre_incident.db instance/baseball_players.db
+          sha256sum instance/baseball_players.db | tee /tmp/sha_before.txt
+
+      - name: Run the tests
+        run: pytest -q
+        env:
+          SECRET_KEY: ci-secret-key-not-used-in-prod
+
+      - name: The production DB must be byte-identical afterwards
+        run: |
+          sha256sum instance/baseball_players.db | tee /tmp/sha_after.txt
+          diff /tmp/sha_before.txt /tmp/sha_after.txt \
+            && echo "生产库未被改动 ✓" \
+            || (echo "!!! 测试改了生产库 !!!"; exit 1)

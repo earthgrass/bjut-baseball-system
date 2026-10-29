@@ -4,8 +4,6 @@
 运行: python init_db.py
 """
 
-import os
-import sys
 from app import app
 from database import db, init_positions, add_sample_data
 

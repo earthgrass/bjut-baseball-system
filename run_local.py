@@ -31,5 +31,5 @@ if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     host = os.environ.get('HOST', '127.0.0.1')
     print(f" * 本地开发模式：http://{host}:{port}  (仅本机可访问)")
-    print(f" * 管理员账号：admin / 见 .env 或 scripts/reset_admin_password.py")
+    print(" * 管理员账号：admin / 见 .env 或 scripts/reset_admin_password.py")
     run_simple(host, port, app, use_debugger=False, use_reloader=False, threaded=True)

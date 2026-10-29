@@ -1,0 +1,39 @@
+# 项目工具配置（Phase R4，审计 #22）
+#
+# 这里只放**工具**配置。应用配置在 config.py，数据库配置在 .env。
+# 刻意不写 [tool.pytest.ini_options] —— 改 pytest 的 rootdir/testpaths
+# 有可能改变测试发现行为，不值得为一个 lint 配置冒险。
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = [
+    "instance",       # 开发残留脚本，不参与 lint
+    "recovery",       # 只读取证快照
+    ".claude",
+    "__pycache__",
+]
+
+[tool.ruff.lint]
+# 选的是「能挡住真 bug」的规则，不是「洁癖」规则：
+#   F  —— pyflakes：未定义名字、未使用的 import、f-string 里漏变量（真 bug）
+#   E4/E7/E9 —— pycodestyle 的错误级子集
+#   B  —— bugbear：可变默认值、可变参数默认值等真问题
+# 故意不选 E501（行宽）：项目里有大量中文注释，100 字符对中文偏紧。
+select = ["F", "E4", "E7", "E9", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+# 测试里大量使用 fixture 参数与魔法值
+"tests/*" = ["E402", "B011"]
+# 迁移/取证脚本按 __main__ 分支导入
+"scripts/*" = ["E402"]
+# app.py 必须先设好 matplotlib 后端（Agg）再 import pyplot，
+# 否则 Windows 上会用 TkAgg 并在 worker 线程里崩溃 —— 所以 import 不在最顶上。
+"app.py" = ["E402"]
+# 启动脚本要先 chdir / 设环境变量再 import app
+"run.py" = ["E402"]
+"run_local.py" = ["E402"]
+
+[tool.ruff.lint.flake8-bugbear]
+# B008: 函数默认值里调用 —— Flask 的 @app.route 常用，但本项目没用
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query"]

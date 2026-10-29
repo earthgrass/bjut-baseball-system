@@ -1,0 +1,12 @@
+# 开发/工具依赖（不装到生产环境）
+#
+#   pip install -r requirements-dev.txt
+#
+# 生产镜像只装 requirements.txt。
+-r requirements.txt
+
+# 静态检查（Phase R4，审计 #22）
+ruff>=0.17
+
+# 测试
+pytest>=8.0
