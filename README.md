@@ -3,6 +3,9 @@
 一个基于 Flask 的棒球队管理系统，采用竞技风（arena）深色主题 UI，支持球员管理、比赛记录录入、统计可视化、对局查询、PDF 批量导入等功能。
 
 > 仓库地址：<https://github.com/earthgrass/bjut-baseball-system>
+> 接手必读：[`HANDOFF.md`](HANDOFF.md) ｜ 接口契约：[`API_CONTRACT.md`](API_CONTRACT.md) ｜ 阶段报告：[`docs/`](docs/)
+
+[![CI](https://github.com/earthgrass/bjut-baseball-system/actions/workflows/ci.yml/badge.svg)](https://github.com/earthgrass/bjut-baseball-system/actions/workflows/ci.yml)
 
 ---
 
@@ -25,7 +28,22 @@
 - CSRF 防护 + 登录/API 双层速率限制 + 路径穿越防护
 - **写入语义单一**：`game_records` 是唯一真实源，统计档案一律从它重算
   （恒等式 `profile == SUM(game_records)` 永远成立）
-- 96 个 pytest + 25 个 node 单测，测试库与生产库物理隔离
+- **124** 个 pytest + **25** 个 node 单测，测试库与生产库物理隔离（生产库 SHA256 看门狗）
+- CI 流水线（pytest / node --test / ruff）+ 一个专门盯「测试绝不碰生产库」的 safety job
+
+---
+
+## 当前状态（2026-10-30 实测）
+
+| 项 | 值 |
+|---|---|
+| 生产库 | 27 名球员 / **240** 条比赛记录 / 2023-04-01 ~ 2025-11-22 |
+| 库完整性 | `integrity_check` ok · 外键违规 0 条 · 档案与 `SUM(game_records)` 漂移 **0** |
+| 指标口径 | 全部收敛到 `metrics.py` 一份实现（Python 与 JS 同时做 AST 校验） |
+| 测试 | pytest **124 passed** · node **25 passed** · ruff **0 告警** · 端到端 **30/30** |
+| PDF 校验 | 17 份源 PDF，独立校验 **16/17** 通过（第 17 份是源数据自相矛盾） |
+
+> 最新阶段报告：[`docs/PHASE_R4_REPORT.md`](docs/PHASE_R4_REPORT.md)
 
 ---
 
@@ -143,8 +161,13 @@ python init_db.py
 
 - `is_pitcher = true` 时自动拥有「投手」位置，仍可兼守其他位置
 - 每个球员都有 `fielder_profile`，投手额外拥有 `pitcher_profile`
-- 比赛记录写入后自动同步更新汇总档案（`sync_stats_from_game_records()`）
-- 应用启动时会重算一次汇总档案，保证 profile 与 game_records 一致
+- **唯一真源是 `game_records`**：任何写入（单条 / 批量 / PDF 导入）都只写 `game_records`，
+  随后调 `rebuild_player_stats(player_id)` 重算该球员档案 —— 恒等式
+  `profile == SUM(game_records)` 永远成立
+- **应用启动不再自动改库**（审计 #12）：需要重算时显式跑 `scripts/rebuild_stats.py`
+- **局数有两套口径**：`game_records.innings_pitched` 存记法字面值（`.1` = 1/3 局），
+  档案 `innings_pitched_total` 存真实局数；换算必须**逐条**做
+  （各场小数位相加可能 ≥10 而进位），见 `metrics.py`
 
 ### 守备位置
 
@@ -253,7 +276,8 @@ POST /api/pdf/confirm_import  # 确认导入已解析的数据
 
 ```
 bjut-baseball-system/
-├── app.py                    # Flask 主入口（所有路由，约 1700 行）
+├── .github/workflows/ci.yml  # CI：pytest / node --test / ruff / 生产库不被改动
+├── app.py                    # Flask 主入口（所有路由，1961 行）
 ├── run.py                    # 启动脚本，绑定 0.0.0.0（部署用）
 ├── run_local.py              # 启动脚本，绑定 127.0.0.1（本地开发用）
 ├── config.py                 # 配置类（Production / Development / Testing）
@@ -266,7 +290,7 @@ bjut-baseball-system/
 ├── init_db.py                # 初始化数据库（含示例数据）
 ├── create_admin.py           # 交互式创建管理员
 ├── cleanup_db.py             # 数据库清理工具（合并球员后重建档案）
-├── migrate_profiles_sqlite.py# 历史档案迁移脚本（已停用，需 --force 参数）
+├── migrate_profiles_sqlite.py # 历史档案迁移脚本（已停用，需 --force 参数）
 ├── sync_data.py              # 兼容入口：档案重建（转调 database.rebuild_player_stats）
 ├── requirements.txt          # Python 依赖
 ├── requirements-dev.txt      # 开发依赖（ruff / pytest）
@@ -275,17 +299,20 @@ bjut-baseball-system/
 ├── docker-compose.yml        # Docker Compose 配置
 ├── .env.example              # 环境变量模板
 ├── API_CONTRACT.md           # 接口契约（接手必读）
-├── API_DOCUMENTATION.md      # API 调用文档
+├── API_DOCUMENTATION.md      # API 调用示例
+├── HANDOFF.md                # 交接说明（当前进度与下一步）
+├── FEATURE_PROPOSALS.md      # 10 个新功能提案 + 四维评估
 ├── docs/                     # 设计与事故分析文档
-│   ├── DOMAIN_AND_ARCHITECTURE_DESIGN.md
+│   ├── DOMAIN_AND_ARCHITECTURE_DESIGN.md  # Game 实体 / Service 层蓝图
 │   ├── CSRF_AUDIT.md
 │   ├── STATS_WRITE_PATH_REPORT.md
 │   ├── DB_FORENSICS_REPORT.md
-│   ├── ISSUES_AUDIT_20261029.md   # 全量问题清单审计
-│   ├── PHASE_R0_REPORT.md          # 数据事故取证
+│   ├── DB_INVENTORY.md                # 16 个数据库文件盘点
+│   ├── ISSUES_AUDIT_20261029.md       # 全量问题清单审计（35 条）
+│   ├── PHASE_R0_REPORT.md             # 数据事故取证
 │   ├── PHASE_R2_REPORT.md
-│   ├── PHASE_R3_REPORT.md          # 指标引擎 + 列坐标解析器
-│   └── PHASE_R4_REPORT.md          # 数据校正迁移（生产库 230 → 240 条）
+│   ├── PHASE_R3_REPORT.md             # 指标引擎 + 列坐标解析器
+│   └── PHASE_R4_REPORT.md             # 数据校正迁移（生产库 230 → 240 条）
 ├── scripts/                  # 一次性 / 运维脚本
 │   ├── backup_db.py          # 一致性快照备份 + SHA256 + 指纹
 │   ├── add_indexes.py        # 索引迁移（附迁移前后执行计划对比）
@@ -419,6 +446,16 @@ python scripts/validate_pdf_parse.py
 # 16/17 份通过（第 17 份是源 PDF 自己前后矛盾）
 ```
 
+> ⚠️ node 24 上 `node --test tests/js/`（目录写法）会把目录当模块去 require，直接红。
+> 必须用 glob：`node --test 'tests/js/*.test.js'`。
+
+### CI
+
+推送与 PR 会自动触发 [`.github/workflows/ci.yml`](.github/workflows/ci.yml)，跑
+pytest / node --test / ruff，外加一个独立的 `safety` job —— 它把
+`recovery/recovered_pre_incident.db` 复制成生产库跑一遍全量测试，再比对 SHA256，
+一旦生产库被改动立刻红。
+
 > **测试绝不能碰生产库**。`tests/conftest.py` 用 `DATABASE_FILE` 环境变量
 > 在 `import app` **之前**把数据库指向临时目录，并全程监视生产库的 SHA256。
 > 详见 `docs/PHASE_R0_REPORT.md`（2026-04 数据事故的取证记录）。
@@ -479,6 +516,9 @@ cp .env.example .env
 - 错误信息脱敏（数据库错误不直接返回前端，统一记日志）
 - 密码哈希存储（`werkzeug.security`），明文不落盘
 - 危险调试端点已删除（`/api/debug/*`、`/api/test/*`、`/debug.html`）
+- Session cookie 显式配置 `HttpOnly` / `SameSite=Lax` / `Secure` 可配（审计 #28）；
+  生产环境未开 `Secure` 时**启动即告警**
+- 限流后端是内存存储 —— **多 worker 部署必须换 Redis**（审计 #29），生产启动时告警
 
 ---
 
@@ -530,6 +570,11 @@ Phase E0/E0.5 期间，`tests/conftest.py` 用 `sqlite:///:memory:` 覆盖数据
 | 热点表**零索引** | `game_records` / `players` 的查询全是 `SCAN` | 新建库由模型 `__table_args__` 自动建；老库用 `scripts/add_indexes.py` 补建 |
 | 没有自动备份 | 备份全是手工产物 | `scripts/backup_db.py`（一致性快照 + SHA256 + 指纹 + 保留份数） |
 | 旧探针脚本会写坏生产库 | `instance/_verify_*.py` 打正在运行的服务器 + 硬编码口令 | 加安全闸（默认拒绝），改用 `scripts/verify_e2e.py`（打在副本上） |
+| 应用启动时自动改库 | 每次启动都重算档案，违反「审计不自动修」原则 | 移除启动钩子；改由显式 `scripts/rebuild_stats.py` 触发（审计 #12） |
+| PDF 解析「零失败」掩盖了静默错误 | 17/17 份解析成功、0 异常，但字段错位、三垒打全丢、HBP 挂错人 | 引入**独立真值**：拿 PDF 自己的 Totals 行校验（`scripts/validate_pdf_parse.py`），并按 PDF 原文归属纠正 HBP |
+
+> 教训：**解析成功 ≠ 数据正确**。任何「改对了」的说法，都必须有一条独立于被测代码的
+> 真值来源来证伪。
 
 ---
 
@@ -571,17 +616,34 @@ docker-compose up -d
 ## 后续优化方向
 
 - [x] 用户登录与权限管理
-- [x] 单元测试覆盖（74 个回归测试）
+- [x] 单元测试覆盖（**124** 个 pytest + 25 个 node 单测）
 - [x] CSRF 防护 + 速率限制 + 路径穿越防护
-- [x] 测试与生产库物理隔离
+- [x] 测试与生产库物理隔离（生产库 SHA256 看门狗）
 - [x] 比赛记录编辑功能（`PUT /api/game_records/<id>` + 对局页编辑弹窗）
-- [x] 整场比赛批量写入（`POST /api/game_records/batch`）
+- [x] 整场比赛批量写入（`POST /api/game_records/batch`）+ 批量录入前端界面
 - [x] 投手战绩聚合（胜/负/救/胜率）
-- [ ] Flask 蓝图拆分重构（`app.py` 约 1900 行，路由密度偏高）
+- [x] 自动备份（`scripts/backup_db.py`）与导入报告
+- [x] CI + ruff 静态检查（`.github/workflows/ci.yml`）
+- [x] 指标公式收敛到唯一实现（`metrics.py`）
+- [x] 热点表索引（5 个，热查询由 `SCAN` 变 `COVERING INDEX`）
+
+### 尚未完成（按建议顺序）
+
+- [ ] **Game 一级实体** —— 现在「一场比赛」= `game_date + opponent` 字符串，
+      双赛日表达不了、对手改名会分裂成两条记录（审计 #20）
+- [ ] **Service 层** —— `StatsService` / `GameService` / `PlayerService`，
+      蓝图只做 HTTP / 校验 / 鉴权（审计 #16）
+- [ ] **Flask 蓝图拆分重构**（`app.py` 1961 行，路由密度偏高；规范 §43/§77）
+- [ ] **赛季字段** —— 4 月春季 + 10/11 月秋季的学期制是否成立，**待业务方拍板**
 - [ ] 对局信息日期范围筛选
-- [ ] 自动备份与导入日志
-- [ ] PDF 导入的字段映射可视化编辑（解析器改用列坐标，见 `FEATURE_PROPOSALS.md` F7a）
-- [ ] 批量录入的前端界面（后端接口已就绪，见 `API_CONTRACT.md` §3.2）
+- [ ] PDF 导入的字段映射可视化编辑（解析器已改用列坐标，见 `FEATURE_PROPOSALS.md` F7a）
+- [ ] `.pre-commit-config.yaml`（装 Git 钩子，需维护者点头）
+
+### 已知缺口
+
+- `/batch_entry` 尚未在**真实浏览器**里人工点过 —— 本机没有 playwright/selenium。
+  已有三道替代验证：JS 单测 25 个、JS↔模板 DOM id 契约静态检查、端到端 30 项
+- `instance/` 里残留一批开发期探针文件（`gitignored`，不入库），可择机清理
 
 ---
 
