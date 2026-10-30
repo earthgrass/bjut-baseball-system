@@ -6,6 +6,8 @@ Phase R0.10 — Canary test
 import hashlib
 import os
 
+import pytest
+
 
 REAL_DB = os.path.abspath(os.path.join(os.path.dirname(__file__), '..',
                                         'instance', 'baseball_players.db'))
@@ -18,8 +20,16 @@ def _real_db_sha256():
 
 
 def test_canary_real_db_unchanged_before_any_fixture():
-    """独立测试（不依赖 app fixture），只检查 DB 哈希"""
+    """独立测试（不依赖 app fixture），只检查 DB 哈希
+
+    ⚠️ 没有生产库时**跳过**而不是失败：全新 clone / CI 的干净 checkout 里
+    根本没有 instance/baseball_players.db，「库不存在」不是「库被改了」。
+    真正要守的不变量是「**存在**的生产库不被测试改动」——
+    由下面两个用例 + CI 的 safety job 负责。
+    """
     sha = _real_db_sha256()
+    if sha is None:
+        pytest.skip('没有生产库可保护（instance/baseball_players.db 不存在）')
     assert sha is not None, 'real DB missing'
 
 

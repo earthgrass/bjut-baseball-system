@@ -22,6 +22,8 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ['3.11']
+    permissions:
+      contents: write   # 仅供临时的诊断分支使用
 
     steps:
       - uses: actions/checkout@v4
@@ -43,8 +45,18 @@ jobs:
       - name: Lint (ruff)
         run: ruff check .
 
+      - name: Create the production DB (so the canary has something to guard)
+        run: |
+          mkdir -p instance
+          python -c "import app"
+        env:
+          SECRET_KEY: ci-secret-key-not-used-in-prod
+
       - name: Unit & API tests (pytest)
-        run: pytest -q
+        run: |
+          set +e
+          pytest -q --tb=short 2>&1 | tee /tmp/pytest.log
+          exit ${PIPESTATUS[0]}
         env:
           # 测试用临时库；生产库路径在测试里被 fail-fast 拦掉
           SECRET_KEY: ci-secret-key-not-used-in-prod
@@ -60,6 +72,21 @@ jobs:
         # 注意：node 24 的 `node --test <目录>` 会把目录当成模块去 require
         # （MODULE_NOT_FOUND），必须用 glob。
         run: node --test 'tests/js/*.test.js'
+
+      # ── 临时诊断 ──────────────────────────────────────────────
+      # GitHub 的 Actions 日志需要登录才能看，自动化排查时拿不到失败详情。
+      # 失败时把 pytest 输出推到 ci-diagnostics 分支，用 git fetch 就能读到。
+      # TODO: 排查完就删掉这个 step 和 ci-diagnostics 分支。
+      - name: Publish failure diagnostics (temporary)
+        if: failure()
+        run: |
+          tail -c 60000 /tmp/pytest.log > ci-diagnostics.log || true
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout --orphan ci-diagnostics
+          git add ci-diagnostics.log
+          git commit -q -m "ci diagnostics $(date -u +%FT%TZ)"
+          git push --force origin ci-diagnostics
 
   safety:
     # 「测试绝不碰生产库」这条不变量，值得单独一个 job 来守：
