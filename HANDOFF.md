@@ -1,11 +1,12 @@
-# 交接说明 — 2026-10-29 存档点（phase-R4 完成后）
+# 交接说明 — 2026-10-30 存档点（R4 + CI 硬化完成后）
 
 > 这是**明天的起点**。从这里接着做即可，不必从头回溯。
-> 上一版存档点：2026-10-29 上午（phase-R2 完成后）；R3/R4 的报告见 `docs/`。
+> 上一版存档点：2026-10-29（phase-R4 完成后）；R3/R4 的报告见 `docs/`。
+> 本轮增量：**CI 首次真正跑通**，并因此挖出并修掉 3 个此前从未暴露的真 bug。
 
 ---
 
-## 一、当前状态：可运行，数据已校正
+## 一、当前状态：可运行，数据已校正，CI 绿
 
 ```bash
 pip install -r requirements.txt
@@ -15,22 +16,47 @@ python run_local.py           # → http://127.0.0.1:5000
 
 管理员：`admin` / `admin123`（本机开发用；公网前必须改）
 
-**验证状态（2026-10-29 实测）**：
+**验证状态（2026-10-30 实测）**：
 
 | 项 | 结果 |
 |---|---|
-| pytest | **124 passed**（115 原有 + 9 新增） |
-| node 单测 | 25 passed（`node --test tests/js/`） |
+| pytest | **124 passed**（Python 3.11 与 3.12 各跑一遍，均通过） |
+| node 单测 | 25 passed（`node --test 'tests/js/*.test.js'`） |
 | ruff | `All checks passed!`（全项目 0 告警） |
+| GitHub Actions | **两个 job 全绿**（`test` / `safety`），2026-10-30 15:35 那次跑通 |
 | 端到端 | `scripts/verify_e2e.py` **30/30**（打在副本上，生产库 SHA 未变） |
 | PDF 独立校验 | `scripts/validate_pdf_parse.py` 16/17（第 17 份是源 PDF 自相矛盾） |
 | 生产库 | 27 球员 / **240** 比赛记录 / 2023-04-01 ~ 2025-11-22 / integrity ok / fk 0 |
 | 不变量 | 档案 == SUM(game_records)，漂移 **0** |
-| 生产库 SHA256 | `e337144317c206c78b7f68d80bad9aec190fda441d997b9f1ea3606ec79d140e` |
+| 生产库 SHA256 | `e337144317c206c78b7f68d80bad9aec190fda441d997b9f1ea3606ec79d140e`（**全程未变**） |
 
 ---
 
-## 二、R4 这一轮做完了什么
+## 二、这一轮（2026-10-30）做完了什么：CI 首次跑通
+
+上一轮把 CI 的配置文件写好了，但**从没在 GitHub 上真跑过**。这一轮推上去，第一次运行
+就两个 job 全红 —— 顺手挖出 **3 个真 bug**，每一个都是「本地永远发现不了」的那类：
+
+| # | bug | 后果 | 修法 |
+|---|---|---|---|
+| 1 | workflow 装的是 `requirements.txt`，但 pytest 在 `requirements-dev.txt` 里 | `pytest -q` 直接 `command not found`，两个 job 全红 | 改装 `requirements-dev.txt` |
+| 2 | CI 跑 `pytest -q`，本地跑 `python -m pytest` | 裸 `pytest` 不把当前目录放进 `sys.path` → `No module named 'database'`，**10 个测试文件收集失败** | `pyproject.toml` 加 `pythonpath = ["."]`；CI 也改用 `python -m pytest` |
+| 3 | `requirements.txt` 没钉 SQLAlchemy | 2.1 起 `str(engine.url)` 把 Windows 路径渲染成**百分号编码**，conftest 的路径安全判定全线误判 → **95 个测试 error** | conftest 改用 `make_url()` 解析；`requirements.txt` 钉 `SQLAlchemy==2.0.54` |
+
+另外两处：
+
+- `tests/test_canary_r0.py` 的「生产库必须存在」在干净 checkout 里必然失败
+  → 改成**没有生产库就 skip**（库不存在 ≠ 库被改了）
+- CI 的 safety job 复制 `recovery/recovered_pre_incident.db` —— 但 `recovery/`
+  是 `.gitignore` 排除的，干净 checkout 里根本没这个文件
+  → 改用仓库自己的代码生成生产库（`python -c "import app"`）
+
+**这条教训值得记住**：CI 的价值不在于「配了没」，而在于「**真的跑过**」。
+一个从没运行过的 CI 配置，跟没有 CI 是一样的 —— 而且还会给人虚假的安全感。
+
+---
+
+## 三、R4 那一轮做完了什么
 
 ### 1. 把修好的 PDF 解析器**真正用到了生产数据**
 
@@ -68,7 +94,7 @@ HBP 从「安在错的人头上」纠正为「按 PDF 原文归属」
 | #15 | 指标公式 6 份拷贝 | ✅ 全项目只剩 `metrics.py` 一份（AST 检查同时扫 Python 与 JS） |
 | #17 | 热点表零索引 | ✅ 5 个索引，热查询从 `SCAN` 变 `SEARCH ... USING COVERING INDEX` |
 | #18 | 没有自动备份 | ✅ `scripts/backup_db.py`（一致性快照 + SHA256 + 指纹 + 保留份数） |
-| #22 | 没有 CI / lint | ✅ ruff + GitHub Actions（pytest / node --test / ruff，外加一个专盯「测试不碰生产库」的 job）。⚠️ `.pre-commit-config.yaml` **未创建**（装 Git 钩子需你点头） |
+| #22 | 没有 CI / lint | ✅ ruff + GitHub Actions（pytest / node --test / ruff，外加一个专盯「测试不碰生产库」的 job）。**2026-10-30 首次真跑，两个 job 全绿**（见第二节）。⚠️ `.pre-commit-config.yaml` **未创建**（装 Git 钩子需你点头） |
 | #24 | `Query.get()` 弃用 | ✅ 全项目清零 |
 | #26 | 前端死代码 | ✅ 删 110 行 |
 | #28 | session cookie 未配置 | ✅ HttpOnly / SameSite=Lax / Secure 可配；生产环境未开 Secure 时**启动告警** |
@@ -81,7 +107,7 @@ HBP 从「安在错的人头上」纠正为「按 PDF 原文归属」
 
 ---
 
-## 三、下一步（按建议顺序）
+## 四、下一步（按建议顺序）
 
 ### 中等工程量（1-2 天）
 
@@ -121,7 +147,54 @@ HBP 从「安在错的人头上」纠正为「按 PDF 原文归属」
 
 ---
 
-## 四、必须知道的坑（别踩）
+## 五、必须知道的坑（别踩）
+
+### pytest 的 `-m`（2026-10-30 新增，最容易踩）
+
+`python -m pytest` 会把当前目录塞进 `sys.path`，裸 `pytest` **不会**。
+测试里 `from database import Player` 依赖仓库根在 `sys.path` 上 ——
+裸 `pytest -q` 直接 `ModuleNotFoundError: No module named 'database'`，
+10 个测试文件在收集阶段就挂。
+
+现在 `pyproject.toml` 里设了 `pythonpath = ["."]`，两种写法都能跑；
+但**新写脚本一律用 `python -m pytest`**（少一道依赖就少一处
+「本地能跑、CI 不能」的坑）。
+
+### SQLAlchemy 2.1 会把 Windows 路径渲染成百分号编码（2026-10-30 新增）
+
+`str(engine.url)` 在 2.0.54 是 `sqlite:///C:\Users\...`，
+在 2.1.x 变成 `sqlite:///C%3A%5CUsers%5C...`。
+任何拿它切字符串当路径用的代码（比如 conftest 的路径安全判定）
+都会全线误判 → 95 个测试集体 error。
+
+`requirements.txt` 现在钉了 `SQLAlchemy==2.0.54`；真要升级，
+先看 `tests/conftest.py` 的 `_sqlite_path_from_uri()`（已改成用
+SQLAlchemy 自己的 `make_url()` 解析）。
+
+### `recovery/` 是 gitignored 的（2026-10-30 新增）
+
+`recovery/` 被 `.gitignore:16` 排除 —— 它是本机的只读取证快照，
+**不在仓库里**。任何 CI 脚本、workflow、文档都别引用
+`recovery/xxx.db`：干净 checkout 里根本没有那个文件。
+
+### GitHub Actions 的日志需要登录才能看（2026-10-30 新增）
+
+CI 失败时，日志正文要登录 GitHub 才能看，公开 API 也取不到
+（`actions/runs/{id}/logs` 需要 admin 权限）。
+自动化排查时拿不到失败详情 —— 只能靠本地复现。
+所以**提交前尽量在本地按 CI 的方式跑一遍**：
+
+```bash
+python -m pytest -q          # 与 CI 一致
+node --test 'tests/js/*.test.js'
+ruff check .
+```
+
+### node 24 的 `node --test <目录>` 不成立
+
+`node --test tests/js/`（带尾斜杠）会把目录当模块去 require →
+`MODULE_NOT_FOUND`。必须用 glob：`node --test 'tests/js/*.test.js'`
+（需要 node ≥ 21；CI 已显式钉 node 22）。
 
 ### Flask-SQLAlchemy 的 engine 绑定时机
 
@@ -175,11 +248,12 @@ HBP 从「安在错的人头上」纠正为「按 PDF 原文归属」
 
 ---
 
-## 五、文档地图
+## 六、文档地图
 
 | 文档 | 内容 |
 |---|---|
 | `README.md` | 项目总览、快速开始、功能、已知问题与修复记录 |
+| `.github/workflows/ci.yml` | CI：pytest / node --test / ruff / 「测试绝不碰生产库」的 safety job |
 | `API_CONTRACT.md` | **接手必读** —— 接口契约、认证/CSRF、指标口径、开发约定 |
 | `API_DOCUMENTATION.md` | curl 调用示例 |
 | `FEATURE_PROPOSALS.md` | 10 个新功能提案 + 四维评估 |
@@ -194,11 +268,14 @@ HBP 从「安在错的人头上」纠正为「按 PDF 原文归属」
 
 ---
 
-## 六、Git 状态
+## 七、Git 状态
 
-分支：`feature/2026-10-28-runtime-restore`（尚未合并到 `main`）。
+分支：`feature/2026-10-28-runtime-restore` → **已合并到 `main` 并推送**（2026-10-30）。
 
-本轮提交（可单独 revert）：
+远端：<https://github.com/earthgrass/bjut-baseball-system>
+（`main` = 主线；CI 徽章在 README 顶部）
+
+### 本轮提交（可单独 revert）
 
 ```text
 fix: 统计写入路径修正 + 安全加固（指标引擎 / 导入路径 / 局数口径）  ← R3
@@ -211,9 +288,29 @@ feat: 热点表索引 + 迁移脚本
 feat: 自动备份 / 迁移比对 / 安全端到端验证脚本
 chore: ruff + CI + 清理弃用 API 与重复 fixture
 docs: R3/R4 阶段报告 + README/API_CONTRACT 同步
+fix: node --test 的目录写法在 node 24 上不成立
+docs: 更新 README —— 校正过期数字，补充当前状态与 CI 说明
+fix: CI 两个 bug —— pytest 没装、safety job 引用了 gitignore 掉的库
+fix: 测试在 SQLAlchemy 2.1 下集体 error —— URI 路径没解码
+fix: canary 测试在「没有生产库」的环境里误判为失败
+fix: CI 的 pytest 写法差一个 -m，导致 10 个测试文件收集失败
+docs: 同步 HANDOFF —— CI 首跑结论与新坑
 ```
 
-接手的人从 `main` 切分支：
+### 推送方式（这台机器）
+
+`~/.ssh` 里**没有私钥**、也没有 ssh agent → **SSH 推送不可用**。
+实际走的是 HTTPS（凭据管理器里存着 GitHub 凭据）：
+
+```bash
+git push https://github.com/earthgrass/bjut-baseball-system.git <分支>
+```
+
+`origin` 这个 remote 仍指向 SSH 地址（`git@github.com:...`），
+`git fetch origin` 会失败 —— 用上面的 HTTPS URL 代替。
+若要恢复 SSH：生成密钥 → 加到 GitHub → `git remote set-url origin git@github.com:...`。
+
+### 接手的人从 `main` 切分支
 
 ```bash
 git checkout main && git pull
