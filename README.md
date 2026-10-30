@@ -449,12 +449,19 @@ python scripts/validate_pdf_parse.py
 > ⚠️ node 24 上 `node --test tests/js/`（目录写法）会把目录当模块去 require，直接红。
 > 必须用 glob：`node --test 'tests/js/*.test.js'`。
 
+> ⚠️ pytest 的写法：`python -m pytest` 和裸 `pytest` 现在都能跑
+> （`pyproject.toml` 里设了 `pythonpath = ["."]`）。但**新写脚本时建议用
+> `python -m pytest`** —— 裸 `pytest` 依赖那行配置，而 `python -m` 还额外把
+> 当前目录放进 `sys.path`，少一道依赖就少一处「本地能跑、CI 不能」的坑。
+> （这个坑真的踩过：CI 用 `pytest -q`、本地用 `python -m pytest`，差一个 `-m`
+> 导致 10 个测试文件收集失败。）
+
 ### CI
 
 推送与 PR 会自动触发 [`.github/workflows/ci.yml`](.github/workflows/ci.yml)，跑
-pytest / node --test / ruff，外加一个独立的 `safety` job —— 它把
-`recovery/recovered_pre_incident.db` 复制成生产库跑一遍全量测试，再比对 SHA256，
-一旦生产库被改动立刻红。
+pytest / node --test / ruff，外加一个独立的 `safety` job —— 它先用仓库自己的
+代码生成一个生产库（`python -c "import app"`），记下 SHA256，跑完全量测试后
+再比对，一旦生产库被改动立刻红。
 
 > **测试绝不能碰生产库**。`tests/conftest.py` 用 `DATABASE_FILE` 环境变量
 > 在 `import app` **之前**把数据库指向临时目录，并全程监视生产库的 SHA256。

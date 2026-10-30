@@ -1,8 +1,20 @@
 # 项目工具配置（Phase R4，审计 #22）
 #
 # 这里只放**工具**配置。应用配置在 config.py，数据库配置在 .env。
-# 刻意不写 [tool.pytest.ini_options] —— 改 pytest 的 rootdir/testpaths
-# 有可能改变测试发现行为，不值得为一个 lint 配置冒险。
+#
+# 关于 [tool.pytest.ini_options]：只设 `pythonpath`，**不动** rootdir /
+# testpaths / python_files —— 那几项会影响测试发现行为，不值得冒险。
+#
+# 为什么需要 pythonpath：
+#   `python -m pytest` 会把当前目录塞进 sys.path，而 `pytest` 命令行脚本
+#   **不会**。测试里 `from database import Player` 依赖仓库根在 sys.path 上，
+#   于是 `pytest -q` 直接 10 个文件收集错误（No module named 'database'），
+#   而 `python -m pytest -q` 一切正常 —— 本地一直用后者，CI 用前者，
+#   差一个 `-m` 就让 CI 全红。
+#   显式写 pythonpath 之后，两种写法都能跑。
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
 
 [tool.ruff]
 line-length = 100
