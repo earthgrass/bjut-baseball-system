@@ -35,8 +35,10 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install ruff
+          # ⚠️ 必须装 requirements-dev.txt：pytest 与 ruff 都在里面。
+          #    requirements.txt 只有运行时依赖，不含 pytest → 曾经导致
+          #    `pytest -q` 直接 "command not found"，两个 job 全红。
+          pip install -r requirements-dev.txt
 
       - name: Lint (ruff)
         run: ruff check .
@@ -47,9 +49,16 @@ jobs:
           # 测试用临时库；生产库路径在测试里被 fail-fast 拦掉
           SECRET_KEY: ci-secret-key-not-used-in-prod
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          # `node --test '<glob>'` 需要 node ≥ 21（glob 参数支持）。
+          # 显式钉住版本，别依赖 runner 镜像的默认值。
+          node-version: '22'
+
       - name: Front-end unit tests (node)
-        # 注意：node 24 的 `node --test <目录>` 会把目录当成模块去 require，
-        # 必须用 glob 或让 node 自动发现
+        # 注意：node 24 的 `node --test <目录>` 会把目录当成模块去 require
+        # （MODULE_NOT_FOUND），必须用 glob。
         run: node --test 'tests/js/*.test.js'
 
   safety:
@@ -68,13 +77,19 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
 
       - name: Fingerprint the production DB before the tests
+        # ⚠️ 不要从 recovery/ 复制：那个目录被 .gitignore 排除，
+        #    干净的 CI checkout 里根本没有那个文件（首次 CI 运行就红了）。
+        #    改成用仓库自己的代码生成一个生产库：app.py 在 import 时就调
+        #    init_db(app)，建表 + 初始化守备位置。
         run: |
           mkdir -p instance
-          cp recovery/recovered_pre_incident.db instance/baseball_players.db
+          python -c "import app"
           sha256sum instance/baseball_players.db | tee /tmp/sha_before.txt
+        env:
+          SECRET_KEY: ci-secret-key-not-used-in-prod
 
       - name: Run the tests
         run: pytest -q
