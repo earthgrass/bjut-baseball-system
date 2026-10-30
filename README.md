@@ -54,7 +54,7 @@
 | 层级 | 技术 |
 |------|------|
 | 后端 | Flask 3.1.3 |
-| ORM | Flask-SQLAlchemy 3.1.1 |
+| ORM | Flask-SQLAlchemy 3.1.1 / SQLAlchemy 2.0.54 |
 | 登录 | Flask-Login 0.6.3 |
 | 表单 / CSRF | Flask-WTF 1.3.0 / WTForms 3.2.2 |
 | 限流 | Flask-Limiter 4.1.1 |

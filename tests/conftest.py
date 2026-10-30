@@ -16,7 +16,34 @@ import os
 import tempfile
 import shutil
 import hashlib
+from urllib.parse import unquote
 import pytest
+
+
+def _sqlite_path_from_uri(uri: str) -> str:
+    """从 sqlite URI 里取出文件系统路径。
+
+    ⚠️ **不能**直接 `uri.split('sqlite:///', 1)[-1]`：
+    SQLAlchemy 2.1 起，`str(engine.url)` 会把 Windows 路径渲染成**百分号编码**
+    （`sqlite:///C%3A%5CUsers%5C...`）。不解码就拿不到真实路径，
+    路径判定会全线误判为「不安全」→ 所有用 app fixture 的测试集体 error
+    （CI 首次运行就是这么红的）。
+
+    这里用 SQLAlchemy 自己的 make_url 解析（取 url.database，它会解码），
+    解析不了时再退回 split + unquote 兜底。
+    """
+    try:
+        from sqlalchemy.engine import make_url
+        url = make_url(uri)
+        if url.get_backend_name() == 'sqlite':
+            db_path = url.database
+            if db_path:
+                return db_path
+    except Exception:
+        pass
+
+    path_part = uri.split('sqlite:///', 1)[-1]
+    return unquote(path_part)
 
 
 def _is_test_safe_path(uri: str) -> bool:
@@ -39,7 +66,7 @@ def _is_test_safe_path(uri: str) -> bool:
     if ':memory:' in uri.lower():
         return True
 
-    path_part = uri.split('sqlite:///', 1)[-1]
+    path_part = _sqlite_path_from_uri(uri)
     if not path_part:
         return False
     abs_path = os.path.abspath(path_part)

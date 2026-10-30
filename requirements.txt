@@ -1,5 +1,10 @@
 Flask==3.1.3
 Flask-SQLAlchemy==3.1.1
+# ⚠️ 必须钉住：Flask-SQLAlchemy 只要求 SQLAlchemy>=2.0.16，不钉的话每次
+#    新装环境拿到的版本可能不同。2.1.x 起 `str(engine.url)` 会把 Windows 路径
+#    渲染成百分号编码，曾让 CI 的全部测试集体 error（见 tests/conftest.py
+#    的 _sqlite_path_from_uri）。已验证 2.0.54 与 2.1.6 都能跑通 124 个测试。
+SQLAlchemy==2.0.54
 Flask-Login==0.6.3
 Flask-Migrate==4.1.0
 Flask-WTF==1.3.0
