@@ -1,12 +1,13 @@
-# 交接说明 — 2026-10-30 存档点（R4 + CI 硬化完成后）
+# 交接说明 — 2026-10-31 存档点（R5 指标引擎补完 + PDF 页脚修复）
 
 > 这是**明天的起点**。从这里接着做即可，不必从头回溯。
-> 上一版存档点：2026-10-29（phase-R4 完成后）；R3/R4 的报告见 `docs/`。
-> 本轮增量：**CI 首次真正跑通**，并因此挖出并修掉 3 个此前从未暴露的真 bug。
+> 上一版存档点：2026-10-30（R4 + CI 硬化）；阶段报告见 `docs/`。
+> 本轮增量：**指标引擎收尾**（WHIP 改标准口径 + 补 9 个派生率），
+> 并顺带挖出并修掉一个**静默丢数**的 PDF 解析缺陷。
 
 ---
 
-## 一、当前状态：可运行，数据已校正，CI 绿
+## 一、当前状态：可运行，指标口径已校正，CI 绿
 
 ```bash
 pip install -r requirements.txt
@@ -16,21 +17,111 @@ python run_local.py           # → http://127.0.0.1:5000
 
 管理员：`admin` / `admin123`（本机开发用；公网前必须改）
 
-**验证状态（2026-10-30 实测）**：
+**验证状态（2026-10-31 实测）**：
 
 | 项 | 结果 |
 |---|---|
-| pytest | **124 passed**（Python 3.11 与 3.12 各跑一遍，均通过） |
+| pytest | **154 passed**（原 124，本轮 +30） |
 | node 单测 | 25 passed（`node --test 'tests/js/*.test.js'`） |
 | ruff | `All checks passed!`（全项目 0 告警） |
-| GitHub Actions | **两个 job 全绿**（`test` / `safety`），2026-10-30 15:35 那次跑通 |
+| GitHub Actions | 两个 job（`test` / `safety`），**本轮尚未推送**，CI 绿待验证 |
 | 端到端 | `scripts/verify_e2e.py` **30/30**（打在副本上，生产库 SHA 未变） |
+| 解析器前后比对 | 17 份 PDF，差异**恰好 5 处**，全是 `batters_faced` 0 → 真值 |
 | PDF 独立校验 | `scripts/validate_pdf_parse.py` 16/17（第 17 份是源 PDF 自相矛盾） |
 | 生产库 | 27 球员 / **240** 比赛记录 / 2023-04-01 ~ 2025-11-22 / integrity ok / fk 0 |
-| 不变量 | 档案 == SUM(game_records)，漂移 **0** |
-| 生产库 SHA256 | `e337144317c206c78b7f68d80bad9aec190fda441d997b9f1ea3606ec79d140e`（**全程未变**） |
+| 生产库 SHA256 | 迁移前 `e3371443…` → 迁移后 `f731f13d…`（备份文件即迁移前状态） |
+
+> ✅ **生产库已迁移**（2026-10-31 13:14）：WHIP 已按标准口径重算，BF 覆盖 44/45。
+> 备份：`instance/baseball_players.pre_r5_20261031_131450.db`
 
 ---
+
+## 二、这一轮（2026-10-31）做完了什么：指标引擎收尾 + 一个静默丢数的解析器缺陷
+
+### 1. WHIP 改成标准口径（F3 提案的尾巴）
+
+原来分母错用「投球局数」，改成标准的「面对打席数」：
+
+| 投手 | 旧 WHIP | 新 WHIP |
+|---|---|---|
+| 刘孝宇 | 5.60 | 0.64 |
+| 吴鸿硕 | 3.56 | 0.56 |
+| 白云箫 | 3.53 | 0.49 |
+| 李昊宇 | 2.67 | 0.47 |
+| 欧阳翦 | 1.86 | 0.35 |
+| 韩登越 | 1.15 | 0.27 |
+| 仇志豪 | 0.00 | 1.00 |
+
+⚠️ **WHIP 只统计「有面对打席数」的场次** —— 分子分母必须同源，
+否则没 BF 的场次会把分子撑大、WHIP 反而虚高（实测 5 名投手会算错）。
+
+补齐的派生率（教练真正会看的那几个，之前一个都没有）：
+**ISO · BABIP · K% · BB% · K-B% · SB% · CS% · K/9 · BB/9**。
+打击侧的 K-B% 按打席相减，投手侧按 9 局相减（两种惯例不同）。
+
+派生率**不落库**（数据库 schema 零变更），序列化时现算，公式仍全在 `metrics.py`。
+
+### 2. 挖出并修掉一个静默丢数的解析器缺陷
+
+记分卡模板最下方的水印 `Scorekeeping. Stats. Live Game Updates.`
+粘在**最后一个标签段的最后一条**后面，把那条整条吞掉：
+
+```
+BF: 白云箫 9, 李昊宇 3, 韩登越 11, 仇志豪 4 Scorekeeping. Stats. Live Game Updates.
+```
+
+旧代码要求整项以数字结尾 → 匹配失败 → 掉进「无数字 = 次数 1」的兜底 →
+变成垃圾键 → **投手的面对打席数凭空为 0**。**17 份 PDF 全中。**
+
+修复后可恢复 5 条（其余是真的没这一栏）：
+
+```
+韩登越 2023-04-16 = 7 · 仇志豪 2023-04-01 = 4 · 刘孝宇 2024-10-20 = 14
+李昊宇 2025-10-18 = 8 · 刘孝宇 2025-10-26 = 5
+```
+
+BF 覆盖：39/45 → **44/45**（只剩 `2025-11-22` 那场手录、无 PDF 的记录）。
+
+### 3. 顺手清掉的两处公式拷贝
+
+- `app.py` 里自己算 `round(hits/at_bats,3)` 的一份
+- `static/js/script.js` 前端自己算 OPS 的一份（还带 console.log 调试输出）
+
+### 4. 前端接上了新指标
+
+统计页排行榜：打击新增 6 个 tab（长打率 / ISO / BABIP / K% / BB% / K-B%），
+投球新增 3 个（K/9 / BB/9 / K-B%）；球员列表表格新增「上垒率」「长打力 ISO」两列。
+排行榜的配置从「一长串三元表达式」改成 `get(p)` 函数（原来加一个指标就多一个分支，
+漏一个会**静默排错序**）。
+
+### 5. ✅ 生产库迁移：已执行
+
+```bash
+python scripts/migrate_r5_metrics.py          # 只在副本上跑 + 出报告（安全）
+python scripts/migrate_r5_metrics.py --apply  # 验证通过后写生产库（自动备份）
+```
+
+已于 2026-10-31 13:14 执行（业务方确认后）。副本与生产库两次独立执行的
+结果**字节相同**（SHA256 = `f731f13d…`）。
+
+副本上的验证结果（已跑过）：
+
+```
+行数      players 27 → 27 · game_records 240 → 240（零增零减）
+BF 覆盖   39/45 → 44/45
+完整性    integrity_check=ok · foreign_key_check=0
+球员名单  零变化（0 新球员、0 未知姓名新建）
+```
+
+⚠️ 迁移会**重写 `game_records` 的行**（覆盖模式是删旧写新）→ record id 会变，
+但所有字段值除 5 个 BF 外不变（解析器前后逐字段比对已证明）。
+WHIP 数值会大幅变化 —— 这正是要修的东西，但值得先看一眼再落库。
+
+报告：`docs/PHASE_R5_REPORT.md`。
+
+---
+
+## 三、（2026-10-30 那一轮）CI 首次跑通
 
 ## 二、这一轮（2026-10-30）做完了什么：CI 首次跑通
 
@@ -56,7 +147,7 @@ python run_local.py           # → http://127.0.0.1:5000
 
 ---
 
-## 三、R4 那一轮做完了什么
+## 四、R4 那一轮做完了什么
 
 ### 1. 把修好的 PDF 解析器**真正用到了生产数据**
 
@@ -107,7 +198,7 @@ HBP 从「安在错的人头上」纠正为「按 PDF 原文归属」
 
 ---
 
-## 四、下一步（按建议顺序）
+## 五、下一步（按建议顺序）
 
 ### 中等工程量（1-2 天）
 
@@ -129,25 +220,41 @@ HBP 从「安在错的人头上」纠正为「按 PDF 原文归属」
 4. `/batch_entry` 在**真实浏览器**里点一遍 —— 仍是唯一未做的人工验证项
    （本机没有 playwright/selenium/puppeteer）。已有三道替代验证：
    JS 单测 25 个、JS↔模板 DOM id 契约静态检查、端到端 30 项。
-5. `PUT /api/players` 的 400 在前端统一提示（「请改用比赛记录录入」）。
-6. DataTables 加到 players / matchup 页面（现在只有 game_stats 有分页）。
-7. 建 `.pre-commit-config.yaml`（需要你点头 —— 装 Git 钩子属于持久化外部工具）。
+5. 统计页新增的 9 个排行榜 tab 在浏览器里点一遍（本轮唯一没跑过真实浏览器的新界面）。
+7. `PUT /api/players` 的 400 在前端统一提示（「请改用比赛记录录入」）。
+8. DataTables 加到 players / matchup 页面（现在只有 game_stats 有分页）。
+9. 建 `.pre-commit-config.yaml`（需要你点头 —— 装 Git 钩子属于持久化外部工具）。
 
 ### 需要先跟你确认的（业务歧义，脚本不能自动判）
 
-8. **赛季怎么切**（4 月春季 + 10/11 月秋季的学期制是否成立）——
+10. **赛季怎么切**（4 月春季 + 10/11 月秋季的学期制是否成立）——
    需要 Game 实体才能表达，会影响所有统计口径。
-9. **2025-10-25 vs 华北电力大学那份 PDF 自己前后矛盾**：
+11. **2025-10-25 vs 华北电力大学那份 PDF 自己前后矛盾**：
    投手局数之和 1.0，但它的 Totals 行写 1.2。是源数据录入错误，还是记分卡惯例？
    （解析器按「Totals 行」为准 → 1.2；按明细求和 → 1.0。）
-10. **`2025-11-22 vs 北京交通大学` 的 16 条记录没有对应 PDF** ——
+12. **`2025-11-22 vs 北京交通大学` 的 16 条记录没有对应 PDF** ——
     是漏传了 PDF，还是这��是手工录的？目前原样保留，无法用 PDF 验证。
-11. **`尹文浩`** 在 2023-04-16 的记分卡上有一行（0 AB，像是教练）——
+13. **`尹文浩`** 在 2023-04-16 的记分卡上有一行（0 AB，像是教练）——
     他是队员吗？若是，需要补录。
 
 ---
 
-## 五、必须知道的坑（别踩）
+## 六、必须知道的坑（别踩）
+
+### WHIP 的分子分母必须同源（2026-10-31 新增）
+
+有场次没有 BF（`2025-11-22` 那场是手录、无 PDF）。
+若分子用全部场次、分母只用有 BF 的场次 → 分子多算 → **WHIP 虚高**。
+所以 `database._accumulate_record` 只把「有 BF 的场次」计入 WHIP 基数，
+`PitcherProfile.update_calculated_fields()` **不**算 whip（档案列没有这个拆分信息，
+硬算就会退回旧的错误口径）。详见 `metrics.py` 顶部与 `docs/PHASE_R5_REPORT.md`。
+
+### 「唯一公式源」的检查有盲区（2026-10-31 新增）
+
+`tests/test_r3_metrics_and_import.py` 的 AST 检查只认 `* 9 /` 这种 ERA 特征 ——
+它**抓不到** `round(hits/at_bats,3)` 这种短公式（R5 就在 app.py 与 script.js 里
+各抓到一份，已清）。**加新指标时别只在 app.py / 前端现算**，
+先写进 `metrics.py`（API_CONTRACT §5.2 的 checklist 已更新）。
 
 ### pytest 的 `-m`（2026-10-30 新增，最容易踩）
 
@@ -230,6 +337,7 @@ ruff check .
 17/17 份解析成功、0 异常，但数据静默错误率极高。
 **解析成功 ≠ 数据正确。** 独立校验要用 PDF 自己的 Totals 行当真值
 （`scripts/validate_pdf_parse.py`）。
+R5 的页脚缺陷就是这一类：解析"成功"，但每个文件都少一条数据。
 
 ### 局数口径
 
@@ -248,7 +356,7 @@ ruff check .
 
 ---
 
-## 六、文档地图
+## 七、文档地图
 
 | 文档 | 内容 |
 |---|---|
@@ -258,7 +366,8 @@ ruff check .
 | `API_DOCUMENTATION.md` | curl 调用示例 |
 | `FEATURE_PROPOSALS.md` | 10 个新功能提案 + 四维评估 |
 | `docs/ISSUES_AUDIT_20261029.md` | 全量问题清单审计（35 条，本轮收敛了大半） |
-| `docs/PHASE_R4_REPORT.md` | **最新阶段报告**（数据校正迁移 + 硬化） |
+| `docs/PHASE_R5_REPORT.md` | **最新阶段报告**（指标引擎补完 + PDF 页脚修复 + 迁移报告） |
+| `docs/PHASE_R4_REPORT.md` | 数据校正迁移 + 硬化 |
 | `docs/PHASE_R3_REPORT.md` | 指标引擎 + 列坐标解析器 |
 | `docs/PHASE_R2_REPORT.md` | 收窄 PUT + 批量录入 + 三振 bug 修复 |
 | `docs/PHASE_R0_REPORT.md` | 数据事故时间线与取证（改 conftest 前必读） |
@@ -268,14 +377,34 @@ ruff check .
 
 ---
 
-## 七、Git 状态
+## 八、Git 状态
 
-分支：`feature/2026-10-28-runtime-restore` → **已合并到 `main` 并推送**（2026-10-30）。
+分支：`main`，基线 `6dfa004`。
+**R5 的改动尚未提交**（代码 + 文档都已就位，等迁移跑完一起提交）。
 
 远端：<https://github.com/earthgrass/bjut-baseball-system>
 （`main` = 主线；CI 徽章在 README 顶部）
 
-### 本轮提交（可单独 revert）
+### R5 改动清单（未提交）
+
+```text
+M app.py                    指标改走 metrics；matchup 的 WHIP 改 BF 口径；两个 stats 接口补新指标
+M database.py               档案聚合记 WHIP 基数；档案 metrics()；Player 派生率属性；to_dict 输出新指标
+M metrics.py                WHIP 改标准分母；新增 11 个派生率函数 + batting_metrics/pitching_metrics
+M pdf_parser.py             页脚清理 + 计数提取对尾部垃圾容错
+M pdf_parser_columns.py     逐行截页脚、丢弃纯页脚行
+M static/js/script.js       删前端自算 OPS 的拷贝；渲染新列
+M templates/players.html    表格 +上垒率 / 长打力 ISO
+M templates/stats.html      排行榜改 get(p)；新增 9 个 tab；打击榜支持「越低越好」
+M tests/test_r3_metrics_and_import.py   WHIP 测试跟随口径更新
+M tests/test_stats_baseline.py          WHIP 测试跟随口径更新 + 无 BF 用例
+A scripts/migrate_r5_metrics.py         副本迁移 + 报告 + --apply
+A tests/test_r5_metrics_engine.py        30 个新测试
+A docs/PHASE_R5_REPORT.md                阶段报告
+M API_CONTRACT.md / HANDOFF.md / FEATURE_PROPOSALS.md
+```
+
+### 历史提交（可单独 revert）
 
 ```text
 fix: 统计写入路径修正 + 安全加固（指标引擎 / 导入路径 / 局数口径）  ← R3

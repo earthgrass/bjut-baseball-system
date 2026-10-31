@@ -28,7 +28,7 @@
 - CSRF 防护 + 登录/API 双层速率限制 + 路径穿越防护
 - **写入语义单一**：`game_records` 是唯一真实源，统计档案一律从它重算
   （恒等式 `profile == SUM(game_records)` 永远成立）
-- **124** 个 pytest + **25** 个 node 单测，测试库与生产库物理隔离（生产库 SHA256 看门狗）
+- **154** 个 pytest + **25** 个 node 单测，测试库与生产库物理隔离（生产库 SHA256 看门狗）
 - CI 流水线（pytest / node --test / ruff）+ 一个专门盯「测试绝不碰生产库」的 safety job
 
 ---
@@ -40,7 +40,7 @@
 | 生产库 | 27 名球员 / **240** 条比赛记录 / 2023-04-01 ~ 2025-11-22 |
 | 库完整性 | `integrity_check` ok · 外键违规 0 条 · 档案与 `SUM(game_records)` 漂移 **0** |
 | 指标口径 | 全部收敛到 `metrics.py` 一份实现（Python 与 JS 同时做 AST 校验） |
-| 测试 | pytest **124 passed** · node **25 passed** · ruff **0 告警** · 端到端 **30/30** |
+| 测试 | pytest **154 passed** · node **25 passed** · ruff **0 告警** · 端到端 **30/30** |
 | PDF 校验 | 17 份源 PDF，独立校验 **16/17** 通过（第 17 份是源数据自相矛盾） |
 
 > 最新阶段报告：[`docs/PHASE_R4_REPORT.md`](docs/PHASE_R4_REPORT.md)
@@ -282,7 +282,7 @@ bjut-baseball-system/
 ├── run_local.py              # 启动脚本，绑定 127.0.0.1（本地开发用）
 ├── config.py                 # 配置类（Production / Development / Testing）
 ├── database.py               # 数据模型 + 迁移 + 统计重建 + 默认管理员
-├── metrics.py                # 指标引擎（ERA/WHIP/AVG/OBP/SLG/OPS 唯一来源）
+├── metrics.py                # 指标引擎（ERA/WHIP/AVG/OBP/SLG/OPS/ISO/BABIP/K%… 唯一来源）
 ├── pdf_ingest.py             # PDF 解析入口（优先列坐标版，失败才退回文本版）
 ├── pdf_parser.py             # 文本版解析器（遗留，回退用）
 ├── pdf_parser_columns.py     # 列坐标版解析器（按词坐标切左右两栏）
@@ -325,7 +325,7 @@ bjut-baseball-system/
 │   ├── db_forensics.py          # 数据库指纹取证
 │   ├── dedupe_tailwind_config.py
 │   └── inject_tailwind_config.py
-├── tests/                    # pytest 回归测试（124 个）
+├── tests/                    # pytest 回归测试（154 个）
 │   ├── conftest.py           # 测试隔离（临时库 + 生产库 SHA256 看门狗）
 │   ├── test_canary_r0.py     # 生产库未被改动的哨兵测试
 │   ├── test_players_baseline.py
@@ -427,7 +427,7 @@ PDF 文件命名格式建议：`队伍A_vs_队伍B_月_日_年.pdf`
 pip install -r requirements-dev.txt
 
 python -m pytest tests/ -q
-# 124 passed
+# 154 passed
 
 # 前端解析器的单元测试（需要 node）
 node --test 'tests/js/*.test.js'
@@ -571,6 +571,8 @@ Phase E0/E0.5 期间，`tests/conftest.py` 用 `sqlite:///:memory:` 覆盖数据
 | PDF 解析把**对方球员**混进我方 | 旧解析器靠「第一段/最后段」猜哪段是我方 → 造出过 '齐佳王佳帅'、'孙世铎'、'子非陈' 三个幽灵球员 | 改用**列坐标**解析（`pdf_parser_columns.py`），并用 PDF 自己的 Totals 行做独立校验（16/17 份通过） |
 | 三垒打 **188/188 条全丢** | 旧标签正则里根本没有 `3B` | 同上，列坐标解析后恢复 |
 | ERA/WHIP 系统性偏高（最大 44%） | 中文记法 `.1` = 1/3 局，公式却用字面值当真实局数 | 聚合时**逐条**换算（`metrics.innings_to_true`）；档案存真实局数，记录里保留记法字面值 |
+| **WHIP 分母用错**（库里最高 5.60） | 标准 WHIP = `(H+BB)/BF`，代码却用**投球局数**当分母 —— 量纲都不同 | Phase R5 改成标准口径；且只统计「有面对打席数」的场次（分子分母同源）。实测刘孝宇 5.60 → 0.64 |
+| PDF **页脚水印**吞掉每个文件的最后一条 | `Scorekeeping. Stats. Live Game Updates.` 粘在最后一个标签段的最后一条后面，而计数提取要求整项以数字结尾 → 该条静默丢失 | 解析前清页脚；计数提取对尾部垃圾容错。17 份 PDF 全中，恢复 5 条「面对打席数」 |
 | 重导 PDF 修不了历史数据 | 去重逻辑命中旧记录就跳过 → 实测 imported 0 / skipped 212 | 导入加**覆盖模式**（`--replace`）：先删这场旧记录再写新数据 |
 | `app.py` 用了 `re.sub()` 却没 `import re` | **PDF 上传接口必然 500**（ruff F821 查出来） | 补 import，并给上传路径补了端到端覆盖 |
 | `cleanup_db.py` 的 CJK 部首表**整体错位一位** | U+2F0C 被写成「门」，其后 200+ 条映射全部偏移 | 改用 Unicode NFKC 权威映射（ruff F601 查出来） |
@@ -623,7 +625,7 @@ docker-compose up -d
 ## 后续优化方向
 
 - [x] 用户登录与权限管理
-- [x] 单元测试覆盖（**124** 个 pytest + 25 个 node 单测）
+- [x] 单元测试覆盖（**154** 个 pytest + 25 个 node 单测）
 - [x] CSRF 防护 + 速率限制 + 路径穿越防护
 - [x] 测试与生产库物理隔离（生产库 SHA256 看门狗）
 - [x] 比赛记录编辑功能（`PUT /api/game_records/<id>` + 对局页编辑弹窗）

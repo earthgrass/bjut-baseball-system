@@ -164,11 +164,23 @@ const created = await api.post('/api/players', { name: '张三', ... });
   "hit_by_pitch_allowed": 0, "batters_faced": 0, "wild_pitches": 0,
   "era": 0.75, "whip": 1.16, "strike_percentage": 0.0,
 
+  // Phase R5 新增的派生率（打击侧）
+  "plate_appearances": 48, "isolated_power": 0.387, "babip": 0.625,
+  "strikeout_rate": 8.3, "walk_rate": 16.7, "strikeout_walk_rate": -8.4,
+  "stolen_base_rate": 88.9, "caught_stealing_rate": 11.1,
+
+  // Phase R5 新增的派生率（投球侧）
+  "strikeouts_per_9": 15.31, "walks_per_9": 1.87,
+  "pitcher_strikeout_walk_rate": 13.44,
+
   // 嵌套档案（数据真身）
   "fielder_profile": { "player_id": 7, "at_bats_total": 31, ... },
   "pitcher_profile": { "player_id": 7, "innings_pitched_total": 24.1, ... }
 }
 ```
+
+> 派生率**不落库**，序列化时由 `metrics.py` 现算（公式唯一源）。
+> 档案表不新增列 → 数据库 schema 零变更。
 
 ### 2.2 比赛记录
 
@@ -192,8 +204,8 @@ const created = await api.post('/api/players', { name: '张三', ... });
 
 | 方法 | 路径 | 认证 | 返回 | 说明 |
 |---|---|---|---|---|
-| GET | `/api/stats/batting` | 公开 | `对象[]` | 打击统计。键：`name, position, batting_average, home_runs, rbi, stolen_bases` |
-| GET | `/api/stats/pitching` | 公开 | `对象[]` | 投球统计。键：`name, position, era, whip, strikeouts, innings` |
+| GET | `/api/stats/batting` | 公开 | `对象[]` | 打击统计。键：`name, position, batting_average, on_base_percentage, slugging_percentage, ops, home_runs, rbi, stolen_bases, isolated_power, babip, plate_appearances, strikeout_rate, walk_rate, strikeout_walk_rate, stolen_base_rate, caught_stealing_rate` |
+| GET | `/api/stats/pitching` | 公开 | `对象[]` | 投球统计。键：`name, position, era, whip, strikeouts, innings, batters_faced, strike_percentage, strikeouts_per_9, walks_per_9, pitcher_strikeout_walk_rate` |
 | GET | `/api/stats/visualization` | 公开 | `{image, total_players, batters, pitchers}` | `image` 是 `data:image/png;base64,...` |
 | GET | `/api/stats/batting_leaderboard` | 公开 | `对象[]` | 前 10 名。键：`name, jersey_number, position, avg, obp, hits, hr, rbi` |
 | GET | `/api/stats/pitching_leaderboard` | 公开 | `对象[]` | 键：`name, jersey_number, position, era, whip, strikeouts, wins, losses, saves, win_pct, innings` |
@@ -464,13 +476,28 @@ curl -X POST http://127.0.0.1:5000/api/game_records \
 
 | 指标 | 现行公式 | 备注 |
 |---|---|---|
-| WHIP | `(BB+H) / 真实IP` | 标准定义用 BF，但本项目的 BF（面对打席）只有部分比赛有值；现按 `(BB+H)/IP` |
+| WHIP | `(H+BB) / BF` | **标准口径**（Phase R5 修正）。分母是面对打席数，不是投球局数。⚠️ 只统计**有 BF 的场次**（分子分母同源）；BF 为 0 时返回 `0.0`（算不出来，不给假数） |
+| ERA | `ER×9 / 真实IP` | IP 必须**逐条**把记法字面值换成真实局数（`.1` = 1/3 局） |
+| AVG | `H / AB` | — |
 | OBP | `(H+BB+HBP) / (AB+BB+HBP+SF+SH)` | 分母**已含 SH**（旧版漏了） |
 | SLG | `总垒数 / AB` | 总垒数 = 一垒安打 + 2×二垒 + 3×三垒 + 4×本垒打 |
 | OPS | `OBP + SLG` | 一次舍入，不是 `round(OBP)+round(SLG)` |
-| ERA | `ER×9 / 真实IP` | IP 必须**逐条**把记法字面值换成真实局数（`.1` = 1/3 局） |
-| AVG | `H / AB` | — |
+| ISO | `SLG − AVG` | 纯长打力 |
+| BABIP | `(H−HR) / (AB−K−SF−SH)` | 分母 ≤ 0 时为 `0.0` |
+| 打席数 PA | `AB + BB + HBP + SF + SH` | K% / BB% 的分母 |
+| K%（打者） | `K / PA × 100` | 越低越好 |
+| BB%（打者） | `BB / PA × 100` | 越低越好 |
+| K-B%（打者） | `K% − BB%` | 按**打席**相减 |
+| SB% / CS% | `SB / (SB+CS)` · `CS / (SB+CS)` | 盗垒总次数为 0 时为 `0.0` |
+| K/9 · BB/9 | `K / 真实IP × 9` · `BB / 真实IP × 9` | 投手口径 |
+| K-B%（投手） | `K/9 − BB/9` | 投手的 K-B% 惯例是**按 9 局**相减，不是按打席 |
+| 好球率 | `好球数 / 投球数 × 100` | — |
 
+> ⚠️ **WHIP 为什么必须限场次**（Phase R5）：
+> 有几场 PDF 没给 BF（`2025-11-22` 那场是手录、没有 PDF）。
+> 若分子用全部场次、分母只用有 BF 的场次，分子会多算 → WHIP 虚高
+> （实测 5 名投手会算错）。所以分子分母都只取「有 BF 的场次」。
+>
 > ⚠️ **局数是最容易搞错的一条**：`game_records.innings_pitched` 存的是
 > **记法字面值**（PDF 上印的 `.1` 就是 1/3 局），而档案里的
 > `innings_pitched_total` 是**真实局数**。两者差着 2/3 局。
@@ -526,7 +553,8 @@ feature/xxx   —— 你的功能分支，从 main 切出
 - [ ] 错误一律 `jsonify({'error': '中文消息'}), 400`
 - [ ] 参数校验用 `request.args.get('x', type=int)`，非法值给 400
 - [ ] 路径参数先过 `_safe_data_path()`（PDF 相关）或直接查库判 404
-- [ ] 新统计指标写进 `database.py` 的 `update_calculated_fields()`，**不要**在 app.py 里现算
+- [ ] 新统计指标**先写进 `metrics.py`**（唯一公式源），再由 `database.py` 的
+      `update_calculated_fields()` / `metrics()` 调用；**不要**在 app.py 或前端现算
 - [ ] 补一个测试到 `tests/test_<你的功能>_baseline.py`
 - [ ] 更新本文的端点清单 + `API_DOCUMENTATION.md`
 
