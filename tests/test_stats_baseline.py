@@ -118,13 +118,14 @@ def _create_pitcher(client, **overrides):
 
 
 def _add_pitching(client, pid, *, date, ip, ha=0, ra=0, er=0, bba=0, so=0,
-                  hra=0, opponent='对手'):
+                  hra=0, bf=0, opponent='对手'):
     return client.post('/api/game_records', json={
         'player_id': pid, 'game_date': date, 'opponent': opponent,
         'is_pitching': True,
         'innings_pitched': ip, 'hits_allowed': ha, 'runs_allowed': ra,
         'earned_runs': er, 'walks_allowed': bba, 'strikeouts': so,
-        'home_runs_allowed': hra, 'pitches': 90, 'strikes': 60,
+        'home_runs_allowed': hra, 'batters_faced': bf,
+        'pitches': 90, 'strikes': 60,
     })
 
 
@@ -140,12 +141,27 @@ def test_era_calculation(auth_client):
 
 
 def test_whip_calculation(auth_client):
+    """WHIP = (被安打 + 保送) / 面对打席数（标准口径，Phase R5）。
+
+    修复前分母用的是投球局数：(5+2)/9 = 0.78 —— 那是错的，
+    库里的投球记录几乎都带着小数局数，用局数当分母会离谱地偏高。
+    """
     pid = _create_pitcher(auth_client)
-    _add_pitching(auth_client, pid, date='2025-01-01', ip=9.0, ha=5, bba=2)
+    _add_pitching(auth_client, pid, date='2025-01-01', ip=9.0, ha=5, bba=2, bf=20)
 
     with auth_client.application.app_context():
         p = db.session.get(Player, pid)
-        assert abs(p.whip - 0.78) < 0.01
+        assert abs(p.whip - 0.35) < 0.01      # (5+2)/20
+
+
+def test_whip_without_batters_faced_is_zero(auth_client):
+    """没有面对打席数的场次 → WHIP 算不出来（0.0），而不是退回局数口径。"""
+    pid = _create_pitcher(auth_client)
+    _add_pitching(auth_client, pid, date='2025-01-01', ip=9.0, ha=5, bba=2, bf=0)
+
+    with auth_client.application.app_context():
+        p = db.session.get(Player, pid)
+        assert p.whip == 0.0
 
 
 def test_pitcher_zero_ip_returns_zero_era(auth_client):

@@ -58,9 +58,18 @@ from config import get_config
 # 指标公式统一入口 —— 全项目只有这一份（Phase R3）
 from metrics import (
     innings_to_true,
+    batting_average,
+    total_bases,
+    slugging_percentage,
+    on_base_percentage,
+    ops,
+    isolated_power,
     era,
     whip,
     strike_percentage,
+    strikeouts_per_9,
+    walks_per_9,
+    pitcher_strikeout_walk_rate,
 )
 
 # 配置日志：所有关键事件写到 stderr（适合 docker / 平台日志收集）
@@ -530,38 +539,56 @@ def stats_page():
 def batting_stats():
     """打击数据统计"""
     players = _batting_query().filter(FielderProfile.batting_average > 0).all()
-    
+
     if not players:
         return jsonify({'error': '没有数据'}), 404
-    
+
     data = [{
         'name': p.name,
         'position': p.primary_position or '未指定',
         'batting_average': p.batting_average,
+        'on_base_percentage': p.on_base_percentage,
+        'slugging_percentage': p.slugging_percentage,
+        'ops': p.ops,
         'home_runs': p.home_runs_batting,
         'rbi': p.rbi_total,
-        'stolen_bases': p.stolen_bases
+        'stolen_bases': p.stolen_bases,
+        # Phase R5：补齐派生率（公式来自 metrics.py）
+        'isolated_power': p.isolated_power,
+        'babip': p.babip,
+        'plate_appearances': p.plate_appearances,
+        'strikeout_rate': p.strikeout_rate,
+        'walk_rate': p.walk_rate,
+        'strikeout_walk_rate': p.strikeout_walk_rate,
+        'stolen_base_rate': p.stolen_base_rate,
+        'caught_stealing_rate': p.caught_stealing_rate,
     } for p in players]
-    
+
     return jsonify(data)
 
 @app.route('/api/stats/pitching')
 def pitching_stats():
     """投球数据统计"""
     players = _pitching_query().filter(PitcherProfile.era > 0).all()
-    
+
     if not players:
         return jsonify({'error': '没有数据'}), 404
-    
+
     data = [{
         'name': p.name,
         'position': p.primary_position or '未指定',
         'era': p.era,
         'whip': p.whip,
         'strikeouts': p.strikeouts_total,
-        'innings': p.innings_pitched_total
+        'innings': p.innings_pitched_total,
+        # Phase R5：补齐派生率（公式来自 metrics.py）
+        'batters_faced': p.batters_faced,
+        'strike_percentage': p.strike_percentage,
+        'strikeouts_per_9': p.strikeouts_per_9,
+        'walks_per_9': p.walks_per_9,
+        'pitcher_strikeout_walk_rate': p.pitcher_strikeout_walk_rate,
     } for p in players]
-    
+
     return jsonify(data)
 
 @app.route('/api/stats/visualization')
@@ -1355,7 +1382,16 @@ def _build_matchup_player_map(records):
 def _serialize_batting_matchup_record(record, player=None):
     at_bats = record.at_bats or 0
     hits = record.hits or 0
-    batting_average = round(hits / at_bats, 3) if at_bats > 0 else 0.0
+    # ⚠️ 公式一律走 metrics（Phase R5）—— 这里曾经自己算了一份
+    # `round(hits / at_bats, 3)`，是「公式多份拷贝」的漏网之鱼。
+    avg = batting_average(hits, at_bats)
+
+    tb = total_bases(hits, record.doubles or 0, record.triples or 0,
+                     record.home_runs_batting or 0)
+    slg = slugging_percentage(tb, at_bats)
+    obp = on_base_percentage(hits, record.walks or 0, record.hit_by_pitch or 0,
+                             record.sacrifice_flys or 0, record.sacrifice_hits or 0,
+                             at_bats)
 
     return {
         'id': record.id,
@@ -1374,7 +1410,11 @@ def _serialize_batting_matchup_record(record, player=None):
         'triples': record.triples or 0,
         'home_runs': record.home_runs_batting or 0,
         'stolen_bases': record.stolen_bases or 0,
-        'batting_average': batting_average,
+        'batting_average': avg,
+        'on_base_percentage': obp,
+        'slugging_percentage': slg,
+        'ops': ops(obp, slg),
+        'isolated_power': isolated_power(slg, avg),
     }
 
 
@@ -1386,10 +1426,15 @@ def _serialize_pitching_matchup_record(record, player=None):
     earned_runs = record.earned_runs or 0
     pitches = record.pitches or 0
     strikes = record.strikes or 0
+    batters_faced = record.batters_faced or 0
 
     era_value = era(earned_runs, innings_pitched)
-    whip_value = whip(hits_allowed, walks_allowed, innings_pitched)
+    # ⚠️ Phase R5：WHIP 的分母是**面对打席数**，不是投球局数。
+    # 该场次没有 BF 时返回 0.0（表示算不出来），不给一个假的数。
+    whip_value = whip(hits_allowed, walks_allowed, batters_faced)
     strike_pct = strike_percentage(strikes, pitches)
+    k9 = strikeouts_per_9(record.strikeouts_pitched or 0, innings_pitched)
+    bb9 = walks_per_9(walks_allowed, innings_pitched)
 
     result_tags = []
     if record.win:
@@ -1415,10 +1460,13 @@ def _serialize_pitching_matchup_record(record, player=None):
         'home_runs_allowed': record.home_runs_allowed or 0,
         'pitches': pitches,
         'strikes': strikes,
-        'batters_faced': record.batters_faced or 0,
+        'batters_faced': batters_faced,
         'strike_percentage': strike_pct,
         'era': era_value,
         'whip': whip_value,
+        'strikeouts_per_9': k9,
+        'walks_per_9': bb9,
+        'pitcher_strikeout_walk_rate': pitcher_strikeout_walk_rate(k9, bb9),
         'result_text': ' / '.join(result_tags) if result_tags else '-',
     }
 

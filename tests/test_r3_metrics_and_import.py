@@ -51,9 +51,15 @@ def test_era_uses_true_innings():
     assert era(1, 1.1) == 8.18
 
 
-def test_whip_uses_true_innings():
-    assert whip(3, 2, innings_to_true(1.1)) == 3.75
-    assert whip(3, 2, 0) == 0.0
+def test_whip_uses_batters_faced_not_innings():
+    """WHIP 的分母是**面对打席数**（Phase R5 改了口径）。
+
+    修复前分母用的是投球局数：(3+2)/1.33 = 3.75 —— 那是错的，
+    库里实测刘孝宇旧值 5.60，标准口径 0.56。
+    """
+    assert whip(3, 2, 20) == 0.25          # (3+2)/20
+    assert whip(3, 2, 0) == 0.0           # 没有打者数 → 算不出来，不给假数
+    assert whip(0, 0, 0) == 0.0
 
 
 def test_on_base_percentage_includes_sacrifice_hits():

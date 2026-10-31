@@ -8,17 +8,14 @@ from sqlalchemy import inspect, text
 from sqlalchemy.ext.hybrid import hybrid_property
 from werkzeug.security import generate_password_hash, check_password_hash
 
-# 指标公式统一入口 —— 全项目只有这一份（Phase R3）
+# 指标公式统一入口 —— 全项目只有这一份（Phase R3；Phase R5 补齐派生率）
+# 注意：档案层不再逐个调用公式函数，一律走 batting_metrics() /
+# pitching_metrics()，保证「存进档案的」与「序列化时算的」同源。
 from metrics import (
     innings_to_true,
-    batting_average,
-    total_bases,
-    slugging_percentage,
-    on_base_percentage,
-    ops,
-    era,
     whip,
-    strike_percentage,
+    batting_metrics,
+    pitching_metrics,
 )
 
 db = SQLAlchemy()
@@ -237,6 +234,53 @@ class Player(db.Model):
         if self.pitcher_profile:
             self.pitcher_profile.update_calculated_fields()
 
+    # ── Phase R5：派生率（ISO / BABIP / K% / BB% / K-B% / SB% / CS% …）──
+    # 档案表不新增列，这些率由 metrics.py 实时算。
+    # 命名与 metrics.batting_metrics() 的返回键一一对应。
+    @property
+    def isolated_power(self):
+        return self.fielder_profile.metrics()['isolated_power'] if self.fielder_profile else 0.0
+
+    @property
+    def babip(self):
+        return self.fielder_profile.metrics()['babip'] if self.fielder_profile else 0.0
+
+    @property
+    def plate_appearances(self):
+        return self.fielder_profile.metrics()['plate_appearances'] if self.fielder_profile else 0
+
+    @property
+    def strikeout_rate(self):
+        return self.fielder_profile.metrics()['strikeout_rate'] if self.fielder_profile else 0.0
+
+    @property
+    def walk_rate(self):
+        return self.fielder_profile.metrics()['walk_rate'] if self.fielder_profile else 0.0
+
+    @property
+    def strikeout_walk_rate(self):
+        return self.fielder_profile.metrics()['strikeout_walk_rate'] if self.fielder_profile else 0.0
+
+    @property
+    def stolen_base_rate(self):
+        return self.fielder_profile.metrics()['stolen_base_rate'] if self.fielder_profile else 0.0
+
+    @property
+    def caught_stealing_rate(self):
+        return self.fielder_profile.metrics()['caught_stealing_rate'] if self.fielder_profile else 0.0
+
+    @property
+    def strikeouts_per_9(self):
+        return self.pitcher_profile.metrics()['strikeouts_per_9'] if self.pitcher_profile else 0.0
+
+    @property
+    def walks_per_9(self):
+        return self.pitcher_profile.metrics()['walks_per_9'] if self.pitcher_profile else 0.0
+
+    @property
+    def pitcher_strikeout_walk_rate(self):
+        return self.pitcher_profile.metrics()['pitcher_strikeout_walk_rate'] if self.pitcher_profile else 0.0
+
     def get_positions_string(self):
         if not self.positions:
             return self.primary_position or '未指定'
@@ -309,7 +353,24 @@ class Player(db.Model):
             'pitcher_profile': self.pitcher_profile.to_dict() if self.pitcher_profile else None,
         }
 
+        # ── Phase R5：派生率（ISO / BABIP / K% / BB% / K-B% / SB% / CS% …）──
+        # 档案表不新增列（避免 schema 变更），这些率在序列化时算，
+        # 但**公式一律来自 metrics.py** —— 全项目唯一公式源。
+        if self.fielder_profile:
+            bm = self.fielder_profile.metrics()
+            data.update({
+                'plate_appearances': bm['plate_appearances'],
+                'isolated_power': bm['isolated_power'],
+                'babip': bm['babip'],
+                'strikeout_rate': bm['strikeout_rate'],
+                'walk_rate': bm['walk_rate'],
+                'strikeout_walk_rate': bm['strikeout_walk_rate'],
+                'stolen_base_rate': bm['stolen_base_rate'],
+                'caught_stealing_rate': bm['caught_stealing_rate'],
+            })
+
         if self.pitcher_profile:
+            pm = self.pitcher_profile.metrics()
             data.update({
                 'innings_pitched_total': self.innings_pitched_total,
                 'hits_allowed_total': self.hits_allowed_total,
@@ -324,8 +385,13 @@ class Player(db.Model):
                 'batters_faced': self.batters_faced,
                 'wild_pitches': self.wild_pitches,
                 'era': self.era,
+                # ⚠️ whip 取**档案列**（聚合器按「有 BF 的场次」算好的），
+                # 不用 pitching_metrics() 重算 —— 后者拿不到分场次信息。
                 'whip': self.whip,
                 'strike_percentage': self.strike_percentage,
+                'strikeouts_per_9': pm['strikeouts_per_9'],
+                'walks_per_9': pm['walks_per_9'],
+                'pitcher_strikeout_walk_rate': pm['pitcher_strikeout_walk_rate'],
             })
 
         return data
@@ -372,15 +438,49 @@ class FielderProfile(db.Model):
         self.doubles = self.doubles or 0
         self.triples = self.triples or 0
         self.home_runs_batting = self.home_runs_batting or 0
+        self.strikeouts_batting_total = self.strikeouts_batting_total or 0
+        self.stolen_bases = self.stolen_bases or 0
+        self.caught_stealing = self.caught_stealing or 0
 
-        self.batting_average = batting_average(self.hits_total, self.at_bats_total)
-        self.total_bases = total_bases(self.hits_total, self.doubles,
-                                        self.triples, self.home_runs_batting)
-        self.slugging_percentage = slugging_percentage(self.total_bases, self.at_bats_total)
-        self.on_base_percentage = on_base_percentage(
-            self.hits_total, self.walks_total, self.hit_by_pitch,
-            self.sacrifice_flys, self.sacrifice_hits, self.at_bats_total)
-        self.ops = ops(self.on_base_percentage, self.slugging_percentage)
+        # 一次算完（Phase R5）：OPS 只舍入一次，避免「二次舍入」——
+        # 修复前是 round(round(OBP) + round(SLG))。
+        m = batting_metrics({
+            'at_bats': self.at_bats_total,
+            'hits': self.hits_total,
+            'walks': self.walks_total,
+            'hit_by_pitch': self.hit_by_pitch,
+            'sacrifice_flies': self.sacrifice_flys,
+            'sacrifice_hits': self.sacrifice_hits,
+            'doubles': self.doubles,
+            'triples': self.triples,
+            'home_runs': self.home_runs_batting,
+            'strikeouts': self.strikeouts_batting_total,
+            'stolen_bases': self.stolen_bases,
+            'caught_stealing': self.caught_stealing,
+        })
+
+        self.batting_average = m['batting_average']
+        self.total_bases = m['total_bases']
+        self.slugging_percentage = m['slugging_percentage']
+        self.on_base_percentage = m['on_base_percentage']
+        self.ops = m['ops']
+
+    def metrics(self):
+        """本档案的全部打击派生率（公式来自 metrics.batting_metrics）。"""
+        return batting_metrics({
+            'at_bats': self.at_bats_total or 0,
+            'hits': self.hits_total or 0,
+            'walks': self.walks_total or 0,
+            'hit_by_pitch': self.hit_by_pitch or 0,
+            'sacrifice_flies': self.sacrifice_flys or 0,
+            'sacrifice_hits': self.sacrifice_hits or 0,
+            'doubles': self.doubles or 0,
+            'triples': self.triples or 0,
+            'home_runs': self.home_runs_batting or 0,
+            'strikeouts': self.strikeouts_batting_total or 0,
+            'stolen_bases': self.stolen_bases or 0,
+            'caught_stealing': self.caught_stealing or 0,
+        })
 
     def to_dict(self):
         return {
@@ -419,13 +519,48 @@ class PitcherProfile(db.Model):
         self.earned_runs_total = self.earned_runs_total or 0
         self.pitches = self.pitches or 0
         self.strikes = self.strikes or 0
+        self.strikeouts_total = self.strikeouts_total or 0
+        self.batters_faced = self.batters_faced or 0
 
         # innings_pitched_total 已经是**真实局数**（聚合时逐条换算过，见
         # _accumulate_record），所以这里可以直接用。
-        self.era = era(self.earned_runs_total, self.innings_pitched_total)
-        self.whip = whip(self.hits_allowed_total, self.walks_allowed_total,
-                         self.innings_pitched_total)
-        self.strike_percentage = strike_percentage(self.strikes, self.pitches)
+        m = pitching_metrics({
+            'innings': self.innings_pitched_total,
+            'earned_runs': self.earned_runs_total,
+            'hits_allowed': self.hits_allowed_total,
+            'walks_allowed': self.walks_allowed_total,
+            'strikeouts': self.strikeouts_total,
+            'pitches': self.pitches,
+            'strikes': self.strikes,
+            'batters_faced': self.batters_faced,
+        })
+        self.era = m['era']
+        self.strike_percentage = m['strike_percentage']
+
+    def metrics(self):
+        """本档案的全部投球派生率（公式来自 metrics.pitching_metrics）。
+
+        ⚠️ 返回值里的 'whip' 恒为 0.0 —— 标准 WHIP 需要「有 BF 的场次」这个
+        拆分信息，档案表里没有。WHIP 用**档案列** `self.whip`
+        （由聚合器 _apply_agg_to_player 写入）。
+        """
+        return pitching_metrics({
+            'innings': self.innings_pitched_total or 0.0,
+            'earned_runs': self.earned_runs_total or 0,
+            'hits_allowed': self.hits_allowed_total or 0,
+            'walks_allowed': self.walks_allowed_total or 0,
+            'strikeouts': self.strikeouts_total or 0,
+            'pitches': self.pitches or 0,
+            'strikes': self.strikes or 0,
+            'batters_faced': self.batters_faced or 0,
+        })
+
+        # ⚠️ whip **不在这里算**（Phase R5）。
+        # 标准 WHIP = (被安打 + 保送) / 面对打席数，分母是 BF 而不是局数；
+        # 而「哪些场次有 BF」这个信息只存在于 game_records 里（有的场次
+        # PDF 根本没给 BF），档案表并不存这个拆分。
+        # 所以 WHIP 由聚合器在重建档案时算出并写入，见 _apply_agg_to_player。
+        # 这里若强行用档案列重算，就会退回旧的错误口径。
 
     def to_dict(self):
         return {
@@ -531,7 +666,10 @@ def _new_agg():
             'innings_pitched': 0.0, 'hits_allowed': 0, 'runs_allowed': 0,
             'earned_runs': 0, 'walks_allowed': 0, 'strikeouts': 0,
             'home_runs_allowed': 0, 'pitches': 0, 'strikes': 0,
-            'hit_by_pitch_allowed': 0, 'batters_faced': 0, 'wild_pitches': 0
+            'hit_by_pitch_allowed': 0, 'batters_faced': 0, 'wild_pitches': 0,
+            # WHIP 的计算基数（Phase R5）：只累计「有面对打席数」的场次。
+            # 分子分母必须来自同一批场次，否则 WHIP 虚高。
+            'whip_hits_allowed': 0, 'whip_walks_allowed': 0, 'whip_games': 0,
         },
         'is_pitcher': False,
     }
@@ -560,6 +698,15 @@ def _accumulate_record(agg, record):
         p['hit_by_pitch_allowed'] += record.hit_by_pitch_allowed or 0
         p['batters_faced'] += record.batters_faced or 0
         p['wild_pitches'] += record.wild_pitches or 0
+
+        # ⚠️ WHIP 的分子必须与分母同源（Phase R5）：
+        # 标准 WHIP = (H + BB) / BF。有几场 PDF 没给 BF，
+        # 若分子用全部场次、分母只用有 BF 的场次，分子会多算 → WHIP 虚高。
+        # 所以这里只累计「有 BF 的场次」的被安打与保送。
+        if (record.batters_faced or 0) > 0:
+            p['whip_hits_allowed'] += record.hits_allowed or 0
+            p['whip_walks_allowed'] += record.walks_allowed or 0
+            p['whip_games'] += 1
     else:
         b = agg['batting']
         b['at_bats'] += record.at_bats or 0
@@ -617,6 +764,12 @@ def _apply_agg_to_player(player, agg):
         pp.batters_faced = p['batters_faced']
         pp.wild_pitches = p['wild_pitches']
         pp.update_calculated_fields()
+
+        # WHIP 由聚合器写入（Phase R5）—— 档案列里没有「哪些场次有 BF」
+        # 这个信息，只有这里（逐条累加时）知道，所以 update_calculated_fields()
+        # 不能算它。见 metrics.whip 的说明。
+        pp.whip = whip(p['whip_hits_allowed'], p['whip_walks_allowed'],
+                       p['batters_faced'])
     return player
 
 
@@ -915,6 +1068,15 @@ def migrate_legacy_player_stats():
 
         player.update_calculated_fields()
 
+        # Phase R5：WHIP 不在 update_calculated_fields() 里算（档案列没有
+        # 「哪些场次有 BF」的信息）。legacy 库迁移过来的是**生涯合计**，
+        # 分子分母同源，直接用标准公式补上。
+        if player.pitcher_profile and (player.pitcher_profile.batters_faced or 0) > 0:
+            player.pitcher_profile.whip = whip(
+                player.pitcher_profile.hits_allowed_total,
+                player.pitcher_profile.walks_allowed_total,
+                player.pitcher_profile.batters_faced)
+
         if changed:
             migrated_players += 1
 
@@ -973,6 +1135,11 @@ def add_sample_data():
             player.pitches = random.randint(150, 800)
             player.strikes = random.randint(80, player.pitches)
             player.batters_faced = random.randint(40, 250)
+            # WHIP 由聚合器写（见 _apply_agg_to_player）；示例数据没有
+            # game_records，直接按标准公式给一个值。
+            player.whip = whip(player.hits_allowed_total,
+                               player.walks_allowed_total,
+                               player.batters_faced)
         else:
             player.at_bats_total = random.randint(20, 120)
             player.runs_total = random.randint(5, 40)
