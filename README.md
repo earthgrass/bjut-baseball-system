@@ -28,24 +28,24 @@
 - CSRF 防护 + 登录/API 双层速率限制 + 路径穿越防护
 - **写入语义单一**：`game_records` 是唯一真实源，统计档案一律从它重算
   （恒等式 `profile == SUM(game_records)` 永远成立）
-- **154** 个 pytest + **25** 个 node 单测，测试库与生产库物理隔离（生产库 SHA256 看门狗）
+- **156** 个 pytest + **25** 个 node 单测，测试库与生产库物理隔离（生产库 SHA256 看门狗）
 - CI 流水线（pytest / node --test / ruff）+ 一个专门盯「测试绝不碰生产库」的 safety job
 
 ---
 
-## 当前状态（2026-10-30 实测）
+## 当前状态（2026-10-31 实测）
 
 | 项 | 值 |
 |---|---|
-| 生产库 | 27 名球员 / **240** 条比赛记录 / 2023-04-01 ~ 2025-11-22 |
+| 生产库 | 31 名球员 / **316** 条比赛记录 / 2023-04-01 ~ 2026-06-06 |
 | 库完整性 | `integrity_check` ok · 外键违规 0 条 · 档案与 `SUM(game_records)` 漂移 **0** |
 | 指标口径 | 全部收敛到 `metrics.py` 一份实现（Python 与 JS 同时做 AST 校验） |
-| 测试 | pytest **154 passed** · node **25 passed** · ruff **0 告警** · 端到端 **30/30** |
+| 测试 | pytest **156 passed** · node **25 passed** · ruff **0 告警** · 端到端 **30/30** |
 | PDF 校验 | 17 份源 PDF，独立校验 **16/17** 通过（第 17 份是源数据自相矛盾） |
-| 2026 赛季 | 5 份 PDF 已就位（`data/2026/`），导入链路已通，**生产库待迁移** |
+| 2026 赛季 | ✅ 已落库：5 场比赛 / 76 条记录（2026-05-16 ~ 2026-06-06） |
 | 新功能规划 | [`docs/FEATURE_PLAN_R6.md`](docs/FEATURE_PLAN_R6.md) —— 角色系统 / 球员主页 / 球员形象 / 对手画像 / 球员卡 / 生命周期 / 移动端（10 张任务卡） |
 
-> 最新阶段报告：[`docs/PHASE_R4_REPORT.md`](docs/PHASE_R4_REPORT.md)
+> 最新阶段报告：[`docs/PHASE_R6_2026_REPORT.md`](docs/PHASE_R6_2026_REPORT.md)
 
 ---
 
@@ -429,7 +429,7 @@ PDF 文件命名格式建议：`队伍A_vs_队伍B_月_日_年.pdf`
 pip install -r requirements-dev.txt
 
 python -m pytest tests/ -q
-# 154 passed
+# 156 passed
 
 # 前端解析器的单元测试（需要 node）
 node --test 'tests/js/*.test.js'

@@ -156,10 +156,12 @@ PDF 金标准校验           PASS  21/22（22 份里唯一 FAIL 是 2025-10-25 
   - `integrity_check` = ok，`foreign_key_check` = 0 条
   - BF 覆盖 44/45 → 57/58
 
-> ⚠️ **生产库迁移尚未执行**（`--apply` 需显式授权）。执行后：
-> `instance/baseball_players.pre_r6_<时间戳>.db` 是回滚点。
+> ✅ **生产库迁移已于 2026-10-31 14:37 执行**（业务方授权后）。
+> 回滚点：`instance/baseball_players.pre_r6_20261031_143737.db`。
+> 迁移后生产库 SHA `a76f7cc4…` 与副本**字节相同**；
+> pytest 156 passed · ruff 全绿 · node 25 passed · verify_e2e 30/30。
 
-## 10. Database impact（执行 --apply 后）
+## 10. Database impact（2026-10-31 14:37 已执行 --apply）
 
 ```
 行数      players 27 → 31 · game_records 240 → 316
@@ -238,14 +240,14 @@ PDF 金标准校验           PASS  21/22（22 份里唯一 FAIL 是 2025-10-25 
 
 ```
 GO —— 代码与测试可以合并
-NO-GO —— 生产库迁移尚未执行（等授权）
+GO —— 生产库迁移已执行并通过迁移后验证
 ```
 
 ### 结论
 
 - **代码合并**：GO。156 passed、ruff 全绿、PDF 金标准校验 21/22（唯一 FAIL 与本轮无关）。
-- **生产库迁移**：等授权。副本已完整验证：历史 240 条逐字段一致、完整性 ok、
-  球员名单只增不减。
+- **生产库迁移**：已执行（2026-10-31 14:37）。历史 240 条逐字段一致、完整性 ok、
+  球员名单只增不减；迁移后 pytest 156 passed、ruff 全绿、node 25 passed、端到端 30/30。
 
 ---
 
