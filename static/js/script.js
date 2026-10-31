@@ -30,36 +30,27 @@ function displayPlayers(players) {
     if (!players || players.length === 0) {
         tableBody.innerHTML = `
             <tr>
-                <td colspan="9" class="text-center text-muted">
+                <td colspan="11" class="text-center text-muted">
                     暂无球员数据
                 </td>
             </tr>
         `;
         return;
     }
-    
+
     players.forEach((player, index) => {
         // 确保所有字段都有值
         const homeRuns = player.home_runs_batting || player.home_runs || 0;
         const rbi = player.rbi_total || 0;
         const avg = player.batting_average || 0;
+        const obp = player.on_base_percentage || 0;
+        const iso = player.isolated_power || 0;
         const positionDisplay = renderPositionBadges(player);
-        
-        // 调试OPS值
-        console.log(`球员 ${player.name} 的OPS值:`, player.ops, typeof player.ops);
-        // 尝试多种方式获取OPS值
-        let ops = 0;
-        if (player.ops !== undefined && player.ops !== null) {
-            ops = parseFloat(player.ops);
-            if (isNaN(ops)) ops = 0;
-        } else if (player.on_base_percentage !== undefined && player.slugging_percentage !== undefined) {
-            // 如果OPS不存在，但上垒率和长打率存在，则计算OPS
-            const obp = parseFloat(player.on_base_percentage) || 0;
-            const slg = parseFloat(player.slugging_percentage) || 0;
-            ops = obp + slg;
-        }
-        console.log(`最终OPS值:`, ops);
-        
+
+        // ⚠️ OPS / 上垒率 / 长打力都**直接读后端算好的值**（Phase R5）。
+        // 前端不再自己加一遍 —— 那正是「网页上一个数、CSV 另一个数」的根源。
+        const ops = parseFloat(player.ops) || 0;
+
         const row = document.createElement('tr');
         row.innerHTML = `
             <td>${index + 1}</td>
@@ -72,26 +63,32 @@ function displayPlayers(players) {
                 ${positionDisplay}
             </td>
             <td>
-                ${avg > 0 ? 
+                ${avg > 0 ?
                     `<span class="badge ${getAvgBadgeClass(avg)}">
                         ${avg.toFixed(3)}
-                    </span>` : 
+                    </span>` :
                     '-'}
             </td>
             <td>
-                ${homeRuns > 0 ? 
-                    `<span class="badge bg-danger">${homeRuns}</span>` : 
+                ${obp > 0 ? obp.toFixed(3) : '-'}
+            </td>
+            <td>
+                ${homeRuns > 0 ?
+                    `<span class="badge bg-danger">${homeRuns}</span>` :
                     '-'}
             </td>
             <td>
-                ${rbi > 0 ? 
-                    `<span class="badge bg-success">${rbi}</span>` : 
+                ${rbi > 0 ?
+                    `<span class="badge bg-success">${rbi}</span>` :
                     '-'}
             </td>
             <td>
-                ${ops > 0 ? 
-                    `<span class="badge ${getOpsBadgeClass(ops)}">${ops.toFixed(3)}</span>` : 
+                ${ops > 0 ?
+                    `<span class="badge ${getOpsBadgeClass(ops)}">${ops.toFixed(3)}</span>` :
                     '-'}
+            </td>
+            <td>
+                ${iso > 0 ? iso.toFixed(3) : '-'}
             </td>
             <td>
                 <button class="btn btn-sm btn-danger" onclick="deletePlayer(${player.id}, '${player.name}')">
@@ -99,7 +96,7 @@ function displayPlayers(players) {
                 </button>
             </td>
         `;
-        
+
         tableBody.appendChild(row);
     });
 }

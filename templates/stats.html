@@ -413,6 +413,24 @@
                 <button class="tab-btn text-gray-400" data-sort="ops" onclick="switchTab('ops')">
                     OPS
                 </button>
+                <button class="tab-btn text-gray-400" data-sort="slugging_percentage" onclick="switchTab('slugging_percentage')">
+                    长打率
+                </button>
+                <button class="tab-btn text-gray-400" data-sort="isolated_power" onclick="switchTab('isolated_power')">
+                    长打力 ISO
+                </button>
+                <button class="tab-btn text-gray-400" data-sort="babip" onclick="switchTab('babip')">
+                    BABIP
+                </button>
+                <button class="tab-btn text-gray-400" data-sort="strikeout_rate" onclick="switchTab('strikeout_rate')">
+                    三振率 K%
+                </button>
+                <button class="tab-btn text-gray-400" data-sort="walk_rate" onclick="switchTab('walk_rate')">
+                    保送率 BB%
+                </button>
+                <button class="tab-btn text-gray-400" data-sort="strikeout_walk_rate" onclick="switchTab('strikeout_walk_rate')">
+                    K-B%
+                </button>
                 <button class="tab-btn text-gray-400" data-sort="at_bats" onclick="switchTab('at_bats')">
                     打数
                 </button>
@@ -460,6 +478,15 @@
                 </button>
                 <button class="tab-btn text-gray-400" data-sort="whip" onclick="switchTab('whip')">
                     WHIP
+                </button>
+                <button class="tab-btn text-gray-400" data-sort="strikeouts_per_9" onclick="switchTab('strikeouts_per_9')">
+                    K/9
+                </button>
+                <button class="tab-btn text-gray-400" data-sort="walks_per_9" onclick="switchTab('walks_per_9')">
+                    BB/9
+                </button>
+                <button class="tab-btn text-gray-400" data-sort="pitcher_strikeout_walk_rate" onclick="switchTab('pitcher_strikeout_walk_rate')">
+                    K-B%
                 </button>
                 <button class="tab-btn text-gray-400" data-sort="hits_allowed" onclick="switchTab('hits_allowed')">
                     被打安打
@@ -570,29 +597,42 @@
         let currentSort = 'batting_average';
 
         // 打击数据配置
+        // ⚠️ 每项用 get(p) 直接取「要排名的那个值」。
+        //    以前是一长串三元表达式（cfg.key === 'x' ? p.x : ...），
+        //    每加一个指标就多一个分支，漏掉一个就静默排错序。
+        //    Phase R5 起统一走 get()。
         const battingConfig = {
-            batting_average:    { label: '打击率排行榜', col: '打击率',  key: 'batting_average',   fmt: v => v.toFixed(3), cls: v => v >= 0.3 ? 'text-green-400' : v >= 0.25 ? 'text-yellow-400' : 'text-gray-300' },
-            on_base_percentage: { label: '上垒率排行榜', col: '上垒率',  key: 'on_base_percentage', fmt: v => v.toFixed(3), cls: v => v >= 0.4 ? 'text-green-400' : v >= 0.35 ? 'text-yellow-400' : 'text-gray-300' },
-            ops:                { label: 'OPS排行榜',    col: 'OPS',     key: 'ops',               fmt: v => v.toFixed(3), cls: v => v >= 0.8 ? 'text-green-400' : v >= 0.7 ? 'text-yellow-400' : 'text-gray-300' },
-            at_bats:            { label: '打数排行榜',   col: '打数',    key: 'at_bats',           fmt: v => v.toString(), cls: () => 'text-white' },
-            hits:               { label: '安打排行榜',   col: '安打',    key: 'hits',              fmt: v => v.toString(), cls: () => 'text-white' },
-            rbi:                { label: '打点排行榜',   col: '打点',    key: 'rbi',               fmt: v => v.toString(), cls: () => 'text-arena-red' },
-            runs:               { label: '得分排行榜',   col: '得分',    key: 'runs',              fmt: v => v.toString(), cls: () => 'text-white' },
-            home_runs:          { label: '本垒打排行榜', col: '本垒打',  key: 'home_runs',         fmt: v => v.toString(), cls: () => 'text-arena-red' },
-            stolen_bases:       { label: '偷垒排行榜',   col: '偷垒',    key: 'stolen_bases',      fmt: v => v.toString(), cls: () => 'text-green-400' },
-            strikeouts:         { label: '三振排行榜',   col: '三振',    key: 'strikeouts',        fmt: v => v.toString(), cls: () => 'text-yellow-400' },
-            walks:              { label: '保送排行榜',   col: '保送',    key: 'walks',             fmt: v => v.toString(), cls: () => 'text-green-400' },
+            batting_average:    { label: '打击率排行榜', col: '打击率',  key: 'batting_average',   get: p => p.batting_average || 0, fmt: v => v.toFixed(3), cls: v => v >= 0.3 ? 'text-green-400' : v >= 0.25 ? 'text-yellow-400' : 'text-gray-300' },
+            on_base_percentage: { label: '上垒率排行榜', col: '上垒率',  key: 'on_base_percentage', get: p => p.on_base_percentage || 0, fmt: v => v.toFixed(3), cls: v => v >= 0.4 ? 'text-green-400' : v >= 0.35 ? 'text-yellow-400' : 'text-gray-300' },
+            slugging_percentage:{ label: '长打率排行榜', col: '长打率',  key: 'slugging_percentage', get: p => p.slugging_percentage || 0, fmt: v => v.toFixed(3), cls: v => v >= 0.5 ? 'text-green-400' : v >= 0.4 ? 'text-yellow-400' : 'text-gray-300' },
+            ops:                { label: 'OPS排行榜',    col: 'OPS',     key: 'ops',               get: p => p.ops || 0, fmt: v => v.toFixed(3), cls: v => v >= 0.8 ? 'text-green-400' : v >= 0.7 ? 'text-yellow-400' : 'text-gray-300' },
+            isolated_power:     { label: '长打力排行榜', col: '长打力 ISO', key: 'isolated_power',  get: p => p.isolated_power || 0, fmt: v => v.toFixed(3), cls: v => v >= 0.2 ? 'text-green-400' : v >= 0.1 ? 'text-yellow-400' : 'text-gray-300' },
+            babip:              { label: 'BABIP排行榜',  col: 'BABIP',   key: 'babip',              get: p => p.babip || 0, fmt: v => v.toFixed(3), cls: v => v >= 0.35 ? 'text-green-400' : v >= 0.3 ? 'text-yellow-400' : 'text-gray-300' },
+            strikeout_rate:     { label: '三振率排行榜', col: 'K%',      key: 'strikeout_rate',     get: p => p.strikeout_rate || 0, fmt: v => v.toFixed(1), cls: v => v <= 10 ? 'text-green-400' : v <= 20 ? 'text-yellow-400' : 'text-gray-300', lower: true },
+            walk_rate:          { label: '保送率排行榜', col: 'BB%',     key: 'walk_rate',          get: p => p.walk_rate || 0, fmt: v => v.toFixed(1), cls: v => v <= 8 ? 'text-green-400' : v <= 12 ? 'text-yellow-400' : 'text-gray-300', lower: true },
+            strikeout_walk_rate:{ label: 'K-B%排行榜',   col: 'K-B%',    key: 'strikeout_walk_rate',get: p => p.strikeout_walk_rate || 0, fmt: v => v.toFixed(1), cls: v => v >= 10 ? 'text-green-400' : v >= 0 ? 'text-yellow-400' : 'text-gray-300' },
+            at_bats:            { label: '打数排行榜',   col: '打数',    key: 'at_bats',           get: p => p.at_bats_total || 0, fmt: v => v.toString(), cls: () => 'text-white' },
+            hits:               { label: '安打排行榜',   col: '安打',    key: 'hits',              get: p => p.hits_total || 0, fmt: v => v.toString(), cls: () => 'text-white' },
+            rbi:                { label: '打点排行榜',   col: '打点',    key: 'rbi',               get: p => p.rbi_total || 0, fmt: v => v.toString(), cls: () => 'text-arena-red' },
+            runs:               { label: '得分排行榜',   col: '得分',    key: 'runs',              get: p => p.runs_total || 0, fmt: v => v.toString(), cls: () => 'text-white' },
+            home_runs:          { label: '本垒打排行榜', col: '本垒打',  key: 'home_runs',         get: p => p.home_runs_batting || 0, fmt: v => v.toString(), cls: () => 'text-arena-red' },
+            stolen_bases:       { label: '偷垒排行榜',   col: '偷垒',    key: 'stolen_bases',      get: p => p.stolen_bases || 0, fmt: v => v.toString(), cls: () => 'text-green-400' },
+            strikeouts:         { label: '三振排行榜',   col: '三振',    key: 'strikeouts',        get: p => p.strikeouts_batting_total || 0, fmt: v => v.toString(), cls: () => 'text-yellow-400' },
+            walks:              { label: '保送排行榜',   col: '保送',    key: 'walks',             get: p => p.walks_total || 0, fmt: v => v.toString(), cls: () => 'text-green-400' },
         };
 
         // 投手数据配置
         const pitchingConfig = {
-            era:                { label: '防御率排行榜', col: '防御率',  key: 'era',                fmt: v => v.toFixed(2), cls: v => v > 0 && v <= 2 ? 'text-green-400' : v <= 4 ? 'text-yellow-400' : 'text-gray-300', lower: true, minInnings: true },
-            pitcher_strikeouts: { label: '投手三振排行榜', col: '三振',   key: 'pitcher_strikeouts', fmt: v => v.toString(),  cls: () => 'text-green-400', minInnings: true },
-            innings_pitched:    { label: '投球局数排行榜', col: '局数',   key: 'innings_pitched',    fmt: v => v.toFixed(1),  cls: () => 'text-white', minInnings: false },
-            pitcher_walks:      { label: '投手保送排行榜', col: '保送',   key: 'pitcher_walks',      fmt: v => v.toString(),  cls: () => 'text-yellow-400', minInnings: true },
-            whip:               { label: 'WHIP排行榜',   col: 'WHIP',    key: 'whip',              fmt: v => v.toFixed(2), cls: v => v > 0 && v <= 1.2 ? 'text-green-400' : v <= 1.4 ? 'text-yellow-400' : 'text-gray-300', lower: true, minInnings: true },
-            hits_allowed:       { label: '被打安打排行榜', col: '被打安打', key: 'hits_allowed',    fmt: v => v.toString(),  cls: () => 'text-yellow-400', minInnings: true },
-            earned_runs:        { label: '自责分排行榜',  col: '自责分',  key: 'earned_runs',        fmt: v => v.toString(),  cls: () => 'text-yellow-400', minInnings: true },
+            era:                { label: '防御率排行榜', col: '防御率',  key: 'era',                get: p => p.era || 0, fmt: v => v.toFixed(2), cls: v => v > 0 && v <= 2 ? 'text-green-400' : v <= 4 ? 'text-yellow-400' : 'text-gray-300', lower: true, minInnings: true },
+            whip:               { label: 'WHIP排行榜',   col: 'WHIP',    key: 'whip',              get: p => p.whip || 0, fmt: v => v.toFixed(2), cls: v => v > 0 && v <= 1.2 ? 'text-green-400' : v <= 1.4 ? 'text-yellow-400' : 'text-gray-300', lower: true, minInnings: true },
+            pitcher_strikeouts: { label: '投手三振排行榜', col: '三振',   key: 'pitcher_strikeouts', get: p => p.strikeouts_total || 0, fmt: v => v.toString(),  cls: () => 'text-green-400', minInnings: true },
+            strikeouts_per_9:   { label: 'K/9排行榜',    col: 'K/9',     key: 'strikeouts_per_9',   get: p => p.strikeouts_per_9 || 0, fmt: v => v.toFixed(2), cls: v => v >= 8 ? 'text-green-400' : v >= 5 ? 'text-yellow-400' : 'text-gray-300', minInnings: true },
+            walks_per_9:        { label: 'BB/9排行榜',   col: 'BB/9',    key: 'walks_per_9',        get: p => p.walks_per_9 || 0, fmt: v => v.toFixed(2), cls: v => v <= 2 ? 'text-green-400' : v <= 3.5 ? 'text-yellow-400' : 'text-gray-300', lower: true, minInnings: true },
+            pitcher_strikeout_walk_rate: { label: '投手K-B%排行榜', col: 'K-B%', key: 'pitcher_strikeout_walk_rate', get: p => p.pitcher_strikeout_walk_rate || 0, fmt: v => v.toFixed(2), cls: v => v >= 3 ? 'text-green-400' : v >= 0 ? 'text-yellow-400' : 'text-gray-300', minInnings: true },
+            innings_pitched:    { label: '投球局数排行榜', col: '局数',   key: 'innings_pitched',    get: p => p.innings_pitched_total || 0, fmt: v => v.toFixed(1),  cls: () => 'text-white', minInnings: false },
+            pitcher_walks:      { label: '投手保送排行榜', col: '保送',   key: 'pitcher_walks',      get: p => p.walks_allowed_total || 0, fmt: v => v.toString(),  cls: () => 'text-yellow-400', minInnings: true },
+            hits_allowed:       { label: '被打安打排行榜', col: '被打安打', key: 'hits_allowed',    get: p => p.hits_allowed_total || 0, fmt: v => v.toString(),  cls: () => 'text-yellow-400', minInnings: true },
+            earned_runs:        { label: '自责分排行榜',  col: '自责分',  key: 'earned_runs',        get: p => p.earned_runs_total || 0, fmt: v => v.toString(),  cls: () => 'text-yellow-400', minInnings: true },
         };
 
         const allConfig = { ...battingConfig, ...pitchingConfig };
@@ -690,21 +730,23 @@
                     stolen_bases: p.stolen_bases || 0,
                     batting_average: p.batting_average || 0,
                     on_base_percentage: p.on_base_percentage || 0,
+                    slugging_percentage: p.slugging_percentage || 0,
                     ops: p.ops || 0,
-                    highlight: cfg.key === 'batting_average' ? (p.batting_average || 0) :
-                               cfg.key === 'on_base_percentage' ? (p.on_base_percentage || 0) :
-                               cfg.key === 'ops' ? (p.ops || 0) :
-                               cfg.key === 'at_bats' ? (p.at_bats_total || 0) :
-                               cfg.key === 'hits' ? (p.hits_total || 0) :
-                               cfg.key === 'rbi' ? (p.rbi_total || 0) :
-                               cfg.key === 'runs' ? (p.runs_total || 0) :
-                               cfg.key === 'home_runs' ? (p.home_runs_batting || 0) :
-                               cfg.key === 'stolen_bases' ? (p.stolen_bases || 0) :
-                               cfg.key === 'strikeouts' ? (p.strikeouts_batting_total || 0) :
-                               cfg.key === 'walks' ? (p.walks_total || 0) : 0
+                    isolated_power: p.isolated_power || 0,
+                    babip: p.babip || 0,
+                    strikeout_rate: p.strikeout_rate || 0,
+                    walk_rate: p.walk_rate || 0,
+                    strikeout_walk_rate: p.strikeout_walk_rate || 0,
+                    highlight: cfg.get(p)
                 }));
 
-            players.sort((a, b) => b.highlight - a.highlight);
+            // 「越低越好」的指标（K% / BB%）：滤掉 0 值后**升序**排
+            if (cfg.lower) {
+                players = players.filter(p => p.highlight > 0);
+                players.sort((a, b) => a.highlight - b.highlight);
+            } else {
+                players.sort((a, b) => b.highlight - a.highlight);
+            }
 
             const tbody = document.getElementById('leaderboardBody');
             tbody.innerHTML = '';
@@ -715,13 +757,15 @@
                 return;
             }
 
-            const maxHighlight = players[0].highlight || 1;
+            const maxHighlight = Math.max(...players.map(p => p.highlight), 1);
 
             players.forEach((p, i) => {
                 const rank = i + 1;
                 const rankClass = rank === 1 ? 'rank-1' : rank === 2 ? 'rank-2' : rank === 3 ? 'rank-3' : 'rank-other';
                 const valueClass = cfg.cls(p.highlight);
-                const barWidth = Math.max(5, (p.highlight / maxHighlight) * 100);
+                const barWidth = cfg.lower
+                    ? Math.max(5, (1 - p.highlight / maxHighlight) * 100)
+                    : Math.max(5, (p.highlight / maxHighlight) * 100);
 
                 const row = document.createElement('tr');
                 row.innerHTML = `
@@ -772,13 +816,10 @@
                     home_runs_allowed: p.home_runs_allowed_total || 0,
                     era: p.era || 0,
                     whip: p.whip || 0,
-                    highlight: cfg.key === 'era' ? (p.era || 0) :
-                               cfg.key === 'pitcher_strikeouts' ? (p.strikeouts_total || 0) :
-                               cfg.key === 'innings_pitched' ? (p.innings_pitched_total || 0) :
-                               cfg.key === 'pitcher_walks' ? (p.walks_allowed_total || 0) :
-                               cfg.key === 'whip' ? (p.whip || 0) :
-                               cfg.key === 'hits_allowed' ? (p.hits_allowed_total || 0) :
-                               cfg.key === 'earned_runs' ? (p.earned_runs_total || 0) : 0
+                    strikeouts_per_9: p.strikeouts_per_9 || 0,
+                    walks_per_9: p.walks_per_9 || 0,
+                    pitcher_strikeout_walk_rate: p.pitcher_strikeout_walk_rate || 0,
+                    highlight: cfg.get(p)
                 }));
 
             // 对于防御率和WHIP，数值越低越好，但排行榜我们按数值排序显示
