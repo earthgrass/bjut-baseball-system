@@ -42,6 +42,8 @@
 | 指标口径 | 全部收敛到 `metrics.py` 一份实现（Python 与 JS 同时做 AST 校验） |
 | 测试 | pytest **154 passed** · node **25 passed** · ruff **0 告警** · 端到端 **30/30** |
 | PDF 校验 | 17 份源 PDF，独立校验 **16/17** 通过（第 17 份是源数据自相矛盾） |
+| 2026 赛季 | 5 份 PDF 已就位（`data/2026/`），导入链路已通，**生产库待迁移** |
+| 新功能规划 | [`docs/FEATURE_PLAN_R6.md`](docs/FEATURE_PLAN_R6.md) —— 角色系统 / 球员主页 / 球员形象 / 对手画像 / 球员卡 / 生命周期 / 移动端（10 张任务卡） |
 
 > 最新阶段报告：[`docs/PHASE_R4_REPORT.md`](docs/PHASE_R4_REPORT.md)
 
