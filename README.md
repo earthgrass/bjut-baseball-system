@@ -611,10 +611,60 @@ docker run -d \
   baseball-app
 ```
 
+### Render 部署（当前实际在用的路径）
+
+Render 服务选 **Docker** 类型，直接用仓库里的 `Dockerfile`（`CMD ["python app.py"]`）。
+`app.py` 的 `__main__` 会读 `PORT` 并绑 `0.0.0.0`，与 Render 注入的 `PORT` 对得上，
+所以**不需要**改 Dockerfile、不需要 gunicorn（见下方"可选加固"）。
+
+#### 必填环境变量（Render → Environment → Add Environment Variable）
+
+| 变量 | 值 | 漏了会怎样 |
+|------|-----|-----------|
+| `SECRET_KEY` | `python -c "import secrets; print(secrets.token_hex(32))"` | **进程直接退出，部署失败**（见下方症状） |
+| `INIT_DEFAULT_ADMIN` | `1`（挂盘前）或 `0`（挂盘后） | 库里没有 admin，登录不了 |
+| `ADMIN_PASSWORD` | 一个**强**密码（不是 `admin123`） | 随机生成并打印到 stdout，重启即失效 |
+| `SESSION_COOKIE_SECURE` | `1` | 走 HTTPS 却发明文 cookie → **登录后立刻掉登录** |
+| `FLASK_ENV` | `production`（Dockerfile 已内置，Dashboard 里不用重复设） | — |
+| `FLASK_DEBUG` | `0`（Dockerfile 未内置，Dashboard 里显式设 `0`） | — |
+
+> `SECRET_KEY` 是**唯一**的硬性启动门槛 —— 规范 §36 要求「生产缺 SECRET_KEY 必须 FAIL TO START，
+> 禁止生产 fallback」。所以这条只能靠环境变量解决，不能靠改代码绕过。
+
+#### 症状 → 原因对照
+
+| 日志里的现象 | 真实原因 | 处理 |
+|-------------|---------|------|
+| `RuntimeError: SECRET_KEY 环境变量未设置` + `Exited with status 1` + `No open ports detected` | 环境变量没设 | Dashboard 里加 `SECRET_KEY` 后 redeploy |
+| 部署成功但**数据每次部署后全没了** | Render 的容器文件系统是临时的，`instance/` 每次重建 | 挂 Render Disk 到 `/app/instance`（见下） |
+| 登录后立刻掉登录 | `SESSION_COOKIE_SECURE=0`，浏览器丢弃明文 cookie | 设 `SESSION_COOKIE_SECURE=1` |
+| 页面正常但功能是**旧的** | 部署的是旧 commit（Render 的 rollback / 手动指定 commit） | Render → Deploys → **Deploy latest commit**，并核对日志里的行号 |
+
+> 最后一条的排查方法：崩溃堆栈会打印 `app.py` 的行号，跟本地 `grep -n` 对一下就知道跑的是哪版。
+> 本项目 `raise RuntimeError(` 在 HEAD 是第 132 行；堆栈里出现 **123** 说明跑的是 23 个提交之前的旧代码。
+
+#### 数据持久化（免费版的硬伤）
+
+Render 免费实例的容器文件系统是**临时**的：每次重启/重新部署，`instance/` 里的
+SQLite 库都会被 `db.create_all()` 重新建成一个**空的**库 —— 316 条比赛记录全部消失。
+
+要保住数据必须挂 **Render Disk**（付费，免费版挂不了）：
+
+| 挂载点 | 装什么 | 备注 |
+|-------|-------|------|
+| `/app/instance` | SQLite 库 | 挂上后 `DATABASE_FILE` 不用改 —— 默认路径就是 `instance/baseball_players.db` |
+| `/app/data` | 上传的 PDF | `data/` 下 22 份历年 PDF 已在镜像里，只补 `uploads/` 即可 |
+
+挂盘之前，`INIT_DEFAULT_ADMIN` 必须保持 `1`（每次冷启动都是空库，得重建 admin）；
+挂盘之后数据库是持久的，就该按 README 上文的说法改成 `0`。
+
 ### Docker 部署（不再主动维护，仅保留作为回退方案）
 
 > ⚠️ **2026 年起的部署推荐直接用 Python + systemd / supervisor / Render / Fly.io 等平台。**
 > 本项目的 `Dockerfile` 与 `docker-compose.yml` 仅作为历史回滚保留，未做主动测试。
+>
+> 本机 `docker build` 前请确认 `.dockerignore` 生效：没有它的话
+> `.env`（含 SECRET_KEY 明文）和 `instance/`（生产库）会被打进镜像层。
 
 ```bash
 # 必须先设置 SECRET_KEY 环境变量

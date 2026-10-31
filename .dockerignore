@@ -1,0 +1,46 @@
+# Docker 构建上下文排除表
+#
+# 为什么必须有它：.gitignore 只管 git，不管 `docker build`。
+# 没有这个文件时，本机 `docker build .` 会把下面两样东西**打进镜像层**：
+#   - .env       → 含 SECRET_KEY 明文。进了镜像层就等于公开，
+#                  `docker history` / 任何拿到镜像的人都能翻出来。
+#   - instance/  → 生产库（真实比赛数据）+ 备份 + 日志，约 2 MB。
+#
+# 提交 fcdc331「彻底从远程仓库移除数据库文件，防止干扰云端部署」挡住的是
+# **git 通道**，挡不住 **docker 通道**。这个文件补上后两条通道都堵住了。
+#
+# 注意：Render 的 Docker runtime 从 git 检出目录构建，天然不含 .env/instance/；
+# 这个文件主要保护**本机构建**和**任何非 git 来源的构建上下文**。
+
+# ── 版本控制与工具缓存 ────────────────────────────────
+.git/
+.gitignore
+.github/
+.claude/
+.pytest_cache/
+.ruff_cache/
+**/__pycache__/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# ── ⚠️ 密钥与口令：绝不能进镜像 ─────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── ⚠️ 生产数据库 / 备份 / 取证快照 / 日志 ──────────────
+# 镜像里绝对不能有。运行时 app.py 会自己 os.makedirs 建出来。
+instance/
+recovery/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# ── 上传的 PDF：运行时按需创建（app.py 里有 os.makedirs）──
+data/uploads/
+
+# 注意：data/ 下 22 份历年比赛 PDF **必须**留在镜像里（导入功能要用），
+# 所以这里只排除 uploads/，不要排除整个 data/。

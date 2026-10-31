@@ -120,7 +120,11 @@ app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{DATABASE_FILE}'
 
 # A2: SECRET_KEY 必须从环境变量读取
 _flask_env = os.environ.get('FLASK_ENV', 'production').lower()
-_secret_key = app.config.get('SECRET_KEY') or os.environ.get('SECRET_KEY')
+# 单独留一份原始值：出错时要能区分「键根本不存在」和「键存在但值是空字符串」——
+# 这两种情况在 Render 上长得一模一样（都被 os.environ.get 判成假值），
+# 但排查动作完全不同，所以错误信息里必须说清楚是哪一种。
+_raw_secret = os.environ.get('SECRET_KEY')
+_secret_key = app.config.get('SECRET_KEY') or _raw_secret
 if _secret_key:
     app.config['SECRET_KEY'] = _secret_key
 elif _flask_env == 'development':
@@ -129,9 +133,16 @@ elif _flask_env == 'development':
     logger.warning('SECRET_KEY 未设置，开发模式使用随机生成的临时密钥（每次重启会失效）')
 else:
     # 生产模式：没有 SECRET_KEY 直接拒绝启动，避免静默使用占位符
+    # 规范 §36：生产禁止 fallback —— 缺 SECRET_KEY 必须 FAIL TO START。
+    # 只能靠环境变量解决，不能改代码绕过。
+    _why = ('键不存在于进程环境变量' if _raw_secret is None
+            else '键存在，但值是空字符串（等于没设）')
     raise RuntimeError(
         'SECRET_KEY 环境变量未设置。生产环境必须设置，请运行：'
         'python -c "import secrets; print(secrets.token_hex(32))"'
+        '\n  · Render / Heroku 等 PaaS：加到 Dashboard → Environment → Environment Variables'
+        '\n  · 本机：写进项目根目录的 .env（参考 .env.example）'
+        f'\n  诊断：{_why}；当前进程共 {len(os.environ)} 个环境变量'
     )
 
 # 初始化数据库
