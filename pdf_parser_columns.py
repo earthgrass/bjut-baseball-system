@@ -30,7 +30,8 @@ import re
 
 import pdfplumber
 
-from pdf_parser import _normalize_text, _normalize_name, _CHAR_MAP  # noqa: F401
+from pdf_parser import (_normalize_text, _normalize_name, _CHAR_MAP,  # noqa: F401
+                        strip_page_footer_words, is_footer_only_row)
 
 
 # 栏界：左右两栏的分界。优先从表头推导，推导不出来时退回页面中线。
@@ -337,7 +338,16 @@ def parse_pdf(filepath):
             for row in _extract_rows(page):
                 for w in row['words']:
                     w['text'] = _normalize_text(w['text'])
+                # ⚠️ 去掉页脚（Phase R5）：记分卡模板最下方的
+                # 「Scorekeeping. Stats. Live Game Updates.」会粘在
+                # **最后一个标签段的最后一条**后面，把那条数据毁掉
+                # （实测 17 份 PDF 全中：投手凭空少一个面对打席数）。
+                row['words'] = strip_page_footer_words(row['words'])
+                if is_footer_only_row(row['words']):
+                    continue
                 row['text'] = ' '.join(w['text'] for w in row['words'])
+                if not row['text'].strip():
+                    continue
                 rows.append(row)
         pdf.close()
     except Exception:

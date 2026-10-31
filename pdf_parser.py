@@ -637,11 +637,63 @@ def _parse_extras(text, my_team_display):
     return extras
 
 
+# ── 页脚清理（Phase R5）────────────────────────────────────────────
+# 记分卡模板在页面最下方印着固定水印：
+#     Scorekeeping.  Stats.  Live  Game  Updates.
+# 它会粘在最后一个标签段的最后一条后面，把那条数据毁掉。
+# 词级清理见 strip_page_footer_words()，文本级清理见 _strip_page_footer_text()。
+
+_PAGE_FOOTER_RE = re.compile(
+    r'scorekeeping\.?\s*stats\.?\s*live\s*game\s*updates\.?', re.I)
+
+# 词级判断用：页脚**第一个词**（词与词之间可能有换行，整句正则匹配不到）
+_PAGE_FOOTER_START_RE = re.compile(r'scorekeeping', re.I)
+
+_FOOTER_VOCAB = {'scorekeeping.', 'stats.', 'live', 'game', 'updates.', '.'}
+
+
+def _strip_page_footer_text(text):
+    """去掉文本里的页脚水印。"""
+    if not text:
+        return text
+    return _PAGE_FOOTER_RE.sub(' ', text)
+
+
+def strip_page_footer_words(words):
+    """从词列表里截掉页脚（返回新 list，不改原 list）。
+
+    页脚总是页面最底下的东西，所以从第一个页脚词开始截断即可 ——
+    页脚之后不会有真正的数据。
+    """
+    if not words:
+        return words
+    for i, w in enumerate(words):
+        if _PAGE_FOOTER_START_RE.search((w.get('text') or '')):
+            return words[:i]
+    return words
+
+
+def is_footer_only_row(words):
+    """整行都是页脚词（如单独一行印着 "Stats. Live Game Updates."）。"""
+    if not words:
+        return False
+    return all(((w.get('text') or '').strip().lower() in _FOOTER_VOCAB)
+               for w in words)
+
+
 def _split_tag_sections(text):
     """将 extras 文本按标签分段。
     返回 {tag: [content1, content2, ...]}
     同一标签可能多次出现（我方和对方各一次）
     """
+    # ⚠️ 必须先去掉页脚（Phase R5）：记分卡模板的固定水印
+    # 「Scorekeeping. Stats. Live Game Updates.」印在页面最下方，
+    # 会粘在**最后一个标签段的最后一条**后面：
+    #     "BF: 白云箫 9, 李昊宇 3, 韩登越 11, 仇志豪 4 Scorekeeping. Stats. ..."
+    # 而 _extract_named_counts_from 要求整项以数字结尾，
+    # 于是「仇志豪 4」这条被静默丢掉（投手凭空少一个面对打席数）。
+    # 17 份 PDF 全部有这个问题。
+    text = _strip_page_footer_text(text)
     result = {}
     # 匹配所有 "TAG: content" 模式
     # ⚠️ 3B 必须在内：少了它，整段 3B 数据会被并进 2B 段里（三垒打全丢）
@@ -688,8 +740,20 @@ def _extract_named_counts_from(content):
             name = _normalize_name(m.group(1))
             count = int(m.group(2))
         else:
-            name = _normalize_name(item)
-            count = 1
+            # ⚠️ 尾部有杂物时（「仇志豪 4 Scorekeeping. Stats. ...」，
+            # Phase R5 修页脚之前就是这样）：退而求其次，取**开头**的
+            # 「名字 + 数字」。宁可多认一个名字，也不要整条丢掉 ——
+            # 丢掉的后果是「静默少一个数据」，比多认一个更危险。
+            #
+            # 数字后面不能紧跟 '-' 或数字，否则那是 P-S 的「45-24」格式，
+            # 不能当计数用。
+            m2 = re.match(r'(.+?)\s+(\d+)(?![-\d])', item)
+            if m2:
+                name = _normalize_name(m2.group(1))
+                count = int(m2.group(2))
+            else:
+                name = _normalize_name(item)
+                count = 1
         if name:
             result[name] = result.get(name, 0) + count
     return result
