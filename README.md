@@ -648,23 +648,58 @@ Render 服务选 **Docker** 类型，直接用仓库里的 `Dockerfile`（`CMD [
 Render 免费实例的容器文件系统是**临时**的：每次重启/重新部署，`instance/` 里的
 SQLite 库都会被 `db.create_all()` 重新建成一个**空的**库 —— 316 条比赛记录全部消失。
 
-要保住数据必须挂 **Render Disk**（付费，免费版挂不了）：
+不止重新部署：**免费服务闲置 15 分钟就会 spin down**（下次有请求时约 1 分钟拉起来），
+spin down 同样丢本地文件。所以免费版上，数据可能在你不注意的时候就没了。
+
+要保住数据必须挂 **Render Disk**（付费服务才有，免费版挂不了）：
 
 | 挂载点 | 装什么 | 备注 |
 |-------|-------|------|
 | `/app/instance` | SQLite 库 | 挂上后 `DATABASE_FILE` 不用改 —— 默认路径就是 `instance/baseball_players.db` |
 | `/app/data` | 上传的 PDF | `data/` 下 22 份历年 PDF 已在镜像里，只补 `uploads/` 即可 |
 
+挂盘的几个代价（官方限制，先知道再决定）：
+
+- 一个盘只能挂给**一个服务实例** —— 想扩容多实例就做不到了
+- 挂了盘之后**不能零停机部署**（换实例时会有短暂中断）
+- 构建阶段和 pre-deploy 阶段访问不到盘
+- 盘容量只能增不能减
+
 挂盘之前，`INIT_DEFAULT_ADMIN` 必须保持 `1`（每次冷启动都是空库，得重建 admin）；
 挂盘之后数据库是持久的，就该按 README 上文的说法改成 `0`。
 
-### Docker 部署（不再主动维护，仅保留作为回退方案）
+> 免费版还有一条：**不提供 SSH shell**，所以没法进容器里 `env` 看变量。
+> 想确认 `SECRET_KEY` 到底进没进容器，只能看启动日志里的诊断行
+> （本次改动后日志会明确写「键不存在于进程环境变量」还是「键存在，但值是空字符串」）。
 
-> ⚠️ **2026 年起的部署推荐直接用 Python + systemd / supervisor / Render / Fly.io 等平台。**
-> 本项目的 `Dockerfile` 与 `docker-compose.yml` 仅作为历史回滚保留，未做主动测试。
+### Docker 部署（Render 当前实际跑的就是这一套）
+
+> ⚠️ 本项目在 Render 上的服务是 **Docker 类型**（构建日志里能看到
+> `FROM docker.io/library/python:3.11-slim` / `WORKDIR /app` / `CMD python app.py`）。
+> 也就是说：上面「Docker 部署不再主动维护」的说法**只对 `docker-compose` 那套回退方案成立**，
+> 对 Render 而言，仓库里的 `Dockerfile` 仍是**在用的生产构建文件**，改它要重新部署。
 >
 > 本机 `docker build` 前请确认 `.dockerignore` 生效：没有它的话
 > `.env`（含 SECRET_KEY 明文）和 `instance/`（生产库）会被打进镜像层。
+
+#### 什么时候该从 Docker 换成 Render 原生 Python runtime
+
+现在**不用换** —— Docker 这条路是通的，只差 `SECRET_KEY` 一个环境变量。
+真要换的话，下面三件事必须同时做，缺一个就起不来：
+
+| 项 | Docker（现状） | Render 原生 Python runtime |
+|---|---|---|
+| Build Command | Dockerfile 里的 `pip install -r requirements.txt` | 必须手动填 `pip install -r requirements.txt` |
+| Start Command | Dockerfile 里的 `CMD ["python app.py"]` | **Render 没有默认启动命令**，必须手动填 `gunicorn app:app` |
+| gunicorn | 用不到（走 `python app.py`） | **必须加进 `requirements.txt`** —— Render 镜像里不预装 |
+| Python 版本 | Dockerfile 钉死 `python:3.11-slim` | 服务默认版本取决于创建日期（2026-10-12 之后创建的是 3.14.8），建议用 `.python-version` 文件钉住 `3.11` |
+| 代码路径 | `/app` | `/opt/render/project/src`（挂 Disk 的路径要跟着变） |
+
+> Render 会给 Python 服务注入 `GUNICORN_CMD_ARGS=--preload --access-logfile - --bind=0.0.0.0:10000`，
+> 所以裸的 `gunicorn app:app` 就能正确绑到 `$PORT`（默认 10000）。
+>
+> 注意 `render.yaml` 里**没有** `pythonVersion` 字段，Python 版本只能用 `envVars: PYTHON_VERSION`
+> 或仓库根目录的 `.python-version` 文件来钉。`.python-version` 是官方支持的，`runtime.txt` 不是。
 
 ```bash
 # 必须先设置 SECRET_KEY 环境变量
