@@ -11,11 +11,29 @@ from datetime import datetime
 
 MY_TEAM_KEYWORDS = ['北京工业大学', '北京工业', '北京⼯业']
 
+# 对手校名别名 —— 同一所学校在不同年份的 box score 上写法不同。
+# 不归一的话，对局查询（/api/matchup/opponents）会把它列成两个对手，
+# 历史交手记录也会被拆成两段。
+# 实测：2024 年的记分卡写「中国人民公安大学」，2026 年的写「中国公安大学」。
+# ⚠️ 新增别名时注意方向 —— 键是 box score 上的写法，值是**规范名**
+#    （库里已有的那个写法优先，避免历史数据被改名）。
+OPPONENT_ALIASES = {
+    '中国公安大学': '中国人民公安大学',
+}
+
+
+def _normalize_opponent_name(name):
+    """把对手校名归一到规范写法（见 OPPONENT_ALIASES）。"""
+    if not name:
+        return name
+    return OPPONENT_ALIASES.get(name, name)
+
 # PDF 中常见的不规范字符映射 → 规范字符
 # 康熙部首 (U+2F00-2FDF) 和 CJK 部件补充 (U+2E80-2EFF) → 标准汉字
 _CHAR_MAP = {
     # CJK 部件补充 (U+2E80-2EFF)
     '\u2EA0': '民',  # ⺠ → 民
+    '\u2ECB': '车',  # ⻋ → 车
     '\u2ED9': '韦',  # ⻙ → 韦
     '\u2EDC': '飞',  # ⻜ → 飞
     '\u2EE2': '马',  # ⻢ → 马
@@ -179,9 +197,9 @@ def _parse_opponent_from_filename(filename):
         # 第二部分可能包含日期: 北京交通大学_Nov_16_2024(2)
         team2 = parts[1].split('_')[0] if '_' in parts[1] else parts[1]
         if '北京工业' in team1:
-            return team2
+            return _normalize_opponent_name(team2)
         elif '北京工业' in team2:
-            return team1
+            return _normalize_opponent_name(team1)
     return None
 
 

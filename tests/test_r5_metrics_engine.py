@@ -373,3 +373,55 @@ def test_real_pdf_last_bf_entry_is_not_swallowed(relpath, expect_name, expect_bf
     pitchers = {p['name']: p for p in result.get('my_team_pitching', [])}
     assert expect_name in pitchers, '没解析出投手: %s' % list(pitchers)
     assert pitchers[expect_name].get('batters_faced') == expect_bf
+
+# ====== 5. 回归护栏：legacy 迁移路径不能改写 WHIP ======
+#
+# R5 踩过的坑（2026-10-31）：
+#   legacy 迁移路径（每次应用启动都会跑）曾用档案的**总计数**
+#   hits_allowed_total / walks_allowed_total 除以 batters_faced 算 WHIP。
+#   但 batters_faced 只累计「有面对打席数」的场次 —— 两者**不同源**，
+#   结果把正确的 0.56 改成了 0.70（实测：吴鸿硕）。
+#   而且这段代码每次启动都跑，一跑就把档案里正确的值覆盖掉。
+#
+#   WHIP 只能由聚合器写（它逐条累加，知道哪些场次有 BF）。
+
+def test_legacy_migration_path_does_not_change_whip(auth_client):
+    """跑一遍启动时的 legacy 迁移路径，WHIP 必须纹丝不动。"""
+    from database import migrate_legacy_player_stats
+
+    pid = _create_pitcher(auth_client)
+    # 一场有 BF（2 安打 + 1 保送 / 10 个打席），一场没有 BF（还有 3 安打 + 2 保送）
+    _add_pitching(auth_client, pid, date='2025-01-01', ip=5.0,
+                  ha=2, bba=1, bf=10)
+    _add_pitching(auth_client, pid, date='2025-01-08', ip=4.0,
+                  ha=3, bba=2, bf=0)
+
+    with auth_client.application.app_context():
+        p = db.session.get(Player, pid)
+        before = p.whip
+        assert before == 0.3          # (2+1)/10 —— 只算有 BF 的那场
+
+        migrate_legacy_player_stats()
+        db.session.commit()
+
+        p = db.session.get(Player, pid)
+        assert p.whip == before, (
+            'legacy 迁移路径把 WHIP 从 %s 改成了 %s —— '
+            '档案的总计数与 BF 不同源，不能这样相除' % (before, p.whip))
+
+
+def test_profile_whip_is_owned_by_the_aggregator(auth_client):
+    """档案的 WHIP 必须能从 game_records 反推（聚合器是唯一写入者）。"""
+    pid = _create_pitcher(auth_client)
+    _add_pitching(auth_client, pid, date='2025-01-01', ip=5.0,
+                  ha=2, bba=1, bf=10)
+    _add_pitching(auth_client, pid, date='2025-01-08', ip=4.0,
+                  ha=3, bba=2, bf=0)
+
+    with auth_client.application.app_context():
+        p = db.session.get(Player, pid)
+        assert p.whip == 0.3
+        # 档案的总计数仍然包含**全部**场次（不能为了 WHIP 把数据丢掉）
+        assert p.hits_allowed_total == 5
+        assert p.walks_allowed_total == 3
+        assert p.batters_faced == 10

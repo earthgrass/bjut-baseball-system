@@ -1068,14 +1068,15 @@ def migrate_legacy_player_stats():
 
         player.update_calculated_fields()
 
-        # Phase R5：WHIP 不在 update_calculated_fields() 里算（档案列没有
-        # 「哪些场次有 BF」的信息）。legacy 库迁移过来的是**生涯合计**，
-        # 分子分母同源，直接用标准公式补上。
-        if player.pitcher_profile and (player.pitcher_profile.batters_faced or 0) > 0:
-            player.pitcher_profile.whip = whip(
-                player.pitcher_profile.hits_allowed_total,
-                player.pitcher_profile.walks_allowed_total,
-                player.pitcher_profile.batters_faced)
+        # ⚠️ WHIP **不在这里算**（Phase R5 踩过的坑）。
+        # 档案里的 hits_allowed_total / walks_allowed_total 是**全部场次**的合计，
+        # 而 batters_faced 只累计「有面对打席数」的场次 —— 两者**不同源**。
+        # 相除得到的不是标准 WHIP：实测吴鸿硕会被从 0.56 改成 0.70。
+        # 而这段代码是**每次启动都会跑**的，一跑就把档案里正确的值覆盖掉。
+        #
+        # WHIP 只由聚合器写（_apply_agg_to_player）—— 只有它逐条累加，
+        # 知道「哪些场次有 BF」。legacy 库里的球员若没有 game_records，
+        # 就**算不出** WHIP（保持 0）—— 这比给一个来路不明的数字诚实。
 
         if changed:
             migrated_players += 1

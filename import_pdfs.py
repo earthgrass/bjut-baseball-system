@@ -328,7 +328,7 @@ def import_game_record(result, dry_run=False, replace=False,
 
 
 def import_all_pdfs(dry_run=False, replace=False, allow_new_players=False,
-                    atomic=True):
+                    atomic=True, subdir=None):
     """导入 data/ 目录下所有 PDF 文件。
 
     replace=True → 覆盖模式：每场先删旧记录再写新解析的数据。
@@ -337,8 +337,13 @@ def import_all_pdfs(dry_run=False, replace=False, allow_new_players=False,
         规范 §28「PDF Import 事务模型」要求 BEGIN → 写全部场次 → COMMIT，
         任何一步失败就整体 ROLLBACK，不留「前 5 场已提交、第 6 场失败」的半截状态。
         atomic=False 保留旧的「每场各提交一次」行为（仅供调试对照）。
+    subdir='2026' → 只导入 data/2026/ 下的 PDF。
+        新增赛季只想增量导入时用 —— 避免把历史赛季全部删了重写一遍
+        （覆盖模式是按「日期+对手」删的，全量重导会让所有 record id 变）。
     """
     data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
+    if subdir:
+        data_dir = os.path.join(data_dir, subdir)
     if not os.path.exists(data_dir):
         print(f"数据目录不存在: {data_dir}")
         return []
@@ -480,14 +485,23 @@ if __name__ == '__main__':
     replace = '--replace' in sys.argv
     allow_new = '--allow-new-players' in sys.argv
     atomic = '--no-atomic' not in sys.argv
+    # --dir 2026 → 只导入 data/2026/（新增赛季做增量导入时用）
+    subdir = None
+    if '--dir' in sys.argv:
+        _i = sys.argv.index('--dir')
+        if _i + 1 < len(sys.argv):
+            subdir = sys.argv[_i + 1]
     if dry_run:
         print("=== 预览模式（不写入数据库）===")
     if replace:
         print("=== 覆盖模式（每场先删旧记录再写入）===")
     if not atomic:
         print("=== 非原子模式（每场各提交一次，仅调试用）===")
+    if subdir:
+        print(f"=== 只导入 data/{subdir}/ 下的 PDF ===")
 
     with app.app_context():
         init_positions()
         import_all_pdfs(dry_run=dry_run, replace=replace,
-                        allow_new_players=allow_new, atomic=atomic)
+                        allow_new_players=allow_new, atomic=atomic,
+                        subdir=subdir)
