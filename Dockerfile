@@ -22,6 +22,12 @@ COPY . .
 # 创建必要的目录
 RUN mkdir -p instance
 
+# 将已校验的数据快照作为容器初始数据库
+COPY deploy/seed/baseball_players.db /app/instance/baseball_players.db
+
+# 构建时校验复制后的初始数据库，校验失败即终止构建
+RUN python -c "from pathlib import Path; import hashlib; p=Path('/app/instance/baseball_players.db'); actual=hashlib.sha256(p.read_bytes()).hexdigest(); print('SEED_DB_SHA256=' + actual); assert actual == 'a76f7cc46686d690121e056bfd11a4ddc0133c134afd19ff5e40bd421ff82aec', 'Seed database checksum mismatch'"
+
 # 暴露端口
 EXPOSE 5000
 

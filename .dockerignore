@@ -35,6 +35,7 @@ __pycache__/
 instance/
 recovery/
 *.db
+!deploy/seed/baseball_players.db
 *.db-journal
 *.db-wal
 *.db-shm

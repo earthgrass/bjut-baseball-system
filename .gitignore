@@ -9,6 +9,7 @@ __pycache__/
 instance/
 .claude/
 *.db
+!deploy/seed/baseball_players.db
 *.db-journal
 *.db-wal
 *.db-shm
